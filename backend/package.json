@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "node --disable-warning=ExperimentalWarning --watch src/env.ts local src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning src/env.ts local src/index.ts",
