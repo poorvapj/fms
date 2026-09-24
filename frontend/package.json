@@ -10,7 +10,8 @@
     "build:live": "tsc -b && vite build --mode live",
     "start": "vite build && vite preview",
     "start:live": "vite build --mode live && vite preview --mode live",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:render": "tsc -b && vite build --mode render"
   },
   "dependencies": {
     "react": "^19.1.1",

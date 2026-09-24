@@ -4,3 +4,8 @@ frontend/dist/
 frontend/dist-live/
 *.log
 .env
+
+# environment files with secrets (examples and frontend/.env.production are safe to commit)
+.env.*
+!.env.example
+!frontend/.env.render
