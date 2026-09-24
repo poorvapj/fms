@@ -13,14 +13,25 @@ const GROUPS = [
   { key: 'engineer', label: 'Engineer', filter: 'engineer_id' },
 ];
 
+const STATUS_FILTERS: { key: string; label: string; test: (r: HealthRow) => boolean }[] = [
+  { key: '', label: 'All', test: () => true },
+  { key: 'has_open', label: 'Has open jobs', test: (r) => r.open > 0 },
+  { key: 'has_overdue', label: 'Has overdue', test: (r) => r.overdue > 0 },
+  { key: 'has_material', label: 'Waiting material', test: (r) => r.waiting_material > 0 },
+  { key: 'has_approval', label: 'Waiting approval', test: (r) => r.waiting_approval > 0 },
+  { key: 'none_open', label: 'No open jobs', test: (r) => r.open === 0 },
+];
+
 export function Dashboard() {
   const meta = useMeta();
-  const f = useUrlFilters({ property_id: '', group_by: 'property' });
+  const f = useUrlFilters({ property_id: '', group_by: 'property', q: '', status: '' });
   const { data, error, loading, reload } = useLoad(() => api.get<DashData>('/dashboard', f.values), [f.key]);
   const base = { property_id: f.values.property_id };
   const link = (extra: Record<string, string>) => `/job-cards${qs({ ...base, ...extra })}`;
   const group = GROUPS.find((g) => g.key === f.values.group_by) ?? GROUPS[0];
   const k = data?.kpi;
+  const statusFilter = STATUS_FILTERS.find((s) => s.key === f.values.status) ?? STATUS_FILTERS[0];
+  const rows = (data?.health ?? []).filter((r) => r.name.toLowerCase().includes(f.values.q.trim().toLowerCase()) && statusFilter.test(r));
 
   return (
     <>
@@ -60,6 +71,19 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
+            <div className="filters" style={{ borderRadius: 0 }}>
+              <div className="f search">
+                <label htmlFor="dh-q">Search {group.label.toLowerCase()}</label>
+                <input id="dh-q" className="input" placeholder={`Search ${group.label.toLowerCase()} name…`} value={f.values.q} onChange={(e) => f.set({ q: e.target.value })} />
+              </div>
+              <div className="f">
+                <label htmlFor="dh-status">Status</label>
+                <select id="dh-status" className="select" value={f.values.status} onChange={(e) => f.set({ status: e.target.value })}>
+                  {STATUS_FILTERS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+              {(f.values.q || f.values.status) && <button className="btn ghost" onClick={() => f.set({ q: '', status: '' })}>Clear</button>}
+            </div>
             <div className="table-wrap">
               <table className="table">
                 <thead>
@@ -69,7 +93,10 @@ export function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.health.map((r) => {
+                  {rows.length === 0 && (
+                    <tr><td colSpan={8} className="empty" style={{ padding: 24 }}>No {group.label.toLowerCase()}s match this filter.</td></tr>
+                  )}
+                  {rows.map((r) => {
                     const to = (extra: Record<string, string>) => (r.id ? link({ [group.filter]: String(r.id), ...extra }) : undefined);
                     const cell = (n: number, extra: Record<string, string>, cls = '') => {
                       const href = to(extra);
