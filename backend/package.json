@@ -18,7 +18,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --test test/e2e.test.ts",
     "migrate:sqlite": "node --disable-warning=ExperimentalWarning src/env.ts local src/tools/migrateFromSqlite.ts",
-    "migrate:sqlite:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/tools/migrateFromSqlite.ts"
+    "migrate:sqlite:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/tools/migrateFromSqlite.ts",
+    "db:ping": "node --disable-warning=ExperimentalWarning src/env.ts local src/tools/ping.ts",
+    "db:ping:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/tools/ping.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

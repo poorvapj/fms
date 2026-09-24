@@ -1,4 +1,4 @@
-import { GridFSBucket, MongoClient, type Collection, type Db } from 'mongodb';
+import { GridFSBucket, MongoClient, ServerApiVersion, type Collection, type Db } from 'mongodb';
 import { config } from '../config.ts';
 
 /**
@@ -21,7 +21,8 @@ export async function connect(uri = config.mongoUri, dbName = config.mongoDb): P
       `Set ${config.env === 'live' ? 'MONGODB_URI_LIVE' : 'MONGODB_URI_LOCAL'} in backend/.env (or in the host's environment settings).`,
     );
   }
-  client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000, appName: 'fms-operations' });
+  // Atlas Stable API v1 (not strict: the app uses distinct/collation, which strict mode rejects).
+  client = new MongoClient(uri, { serverApi: { version: ServerApiVersion.v1, deprecationErrors: true }, serverSelectionTimeoutMS: 15000, appName: 'fms-operations' });
   await client.connect();
   database = client.db(dbName);
   bucket = new GridFSBucket(database, { bucketName: 'uploads' });
