@@ -11,7 +11,7 @@ ensureBaseData();
 
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', 'loopback');
+app.set('trust proxy', config.trustProxy);
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');

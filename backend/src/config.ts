@@ -44,5 +44,10 @@ export const config = {
   jwtSecret: loadSecret(),
   sessionHours: Number(process.env.SESSION_HOURS ?? 12),
   secureCookies: process.env.SECURE_COOKIES === 'true',
+  /**
+   * How many proxies sit in front of the app (Express "trust proxy"), so req.ip is the real visitor.
+   * Local: loopback only. Vercel -> Render: 2.
+   */
+  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY ?? '') ? Number(process.env.TRUST_PROXY) : (process.env.TRUST_PROXY || 'loopback'),
   maxUploadMb: 15,
 };
