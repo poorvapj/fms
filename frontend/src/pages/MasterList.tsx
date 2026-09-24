@@ -10,9 +10,9 @@ import type { Master } from '../lib/types';
 
 type Kind = 'properties' | 'categories' | 'engineers';
 
-const CONFIG: Record<Kind, { title: string; singular: string; sub: string; filterKey: string; fields: { key: string; label: string; type?: 'priority' | 'bool' }[] }> = {
-  properties: { title: 'Properties', singular: 'property', sub: 'Sites and buildings where work is requested', filterKey: 'property_id', fields: [{ key: 'code', label: 'Code' }, { key: 'type', label: 'Type' }, { key: 'address', label: 'Address' }] },
-  categories: { title: 'Work Categories', singular: 'category', sub: 'Trades / types of work, with default priority', filterKey: 'category_id', fields: [{ key: 'description', label: 'Description' }, { key: 'default_priority', label: 'Default priority', type: 'priority' }] },
+const CONFIG: Record<Kind, { title: string; singular: string; sub: string; filterKey: string; fields: { key: string; label: string; type?: 'priority' | 'bool' | 'int' }[] }> = {
+  properties: { title: 'Properties', singular: 'property', sub: 'Sites and buildings where work is requested', filterKey: 'property_id', fields: [{ key: 'sort_order', label: 'Display order', type: 'int' }, { key: 'code', label: 'Code' }, { key: 'type', label: 'Type' }, { key: 'address', label: 'Address' }] },
+  categories: { title: 'Work Categories', singular: 'category', sub: 'Trades / types of work, with default priority', filterKey: 'category_id', fields: [{ key: 'sort_order', label: 'Display order', type: 'int' }, { key: 'description', label: 'Description' }, { key: 'default_priority', label: 'Default priority', type: 'priority' }] },
   engineers: { title: 'Engineers', singular: 'engineer', sub: 'Site and work engineers; link a login in Masters → Users', filterKey: 'engineer_id', fields: [{ key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' }, { key: 'specialization', label: 'Specialisation' }, { key: 'is_external', label: 'External / vendor', type: 'bool' }] },
 };
 
@@ -73,7 +73,7 @@ function EditModal({ kind, value, onClose, onSaved }: { kind: Kind; value: Parti
     setBusy(true);
     try {
       const body: Record<string, unknown> = { name: f.name, active: f.active ? 1 : 0 };
-      cfg.fields.forEach((x) => (body[x.key] = f[x.key] ?? (x.type === 'bool' ? 0 : '')));
+      cfg.fields.forEach((x) => (body[x.key] = f[x.key] ?? (x.type === 'bool' ? 0 : x.type === 'int' ? 999 : '')));
       if (value.id) await api.patch(`/masters/${kind}/${value.id}`, body);
       else await api.post(`/masters/${kind}`, body);
       onSaved();
@@ -86,13 +86,15 @@ function EditModal({ kind, value, onClose, onSaved }: { kind: Kind; value: Parti
     <Modal title={value.id ? `Edit ${cfg.singular}` : `Add ${cfg.singular}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !String(f.name ?? '').trim()} onClick={save}>Save</button></>}>
       <Field label="Name" required><input className="input" value={String(f.name ?? '')} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
       {cfg.fields.map((x) => (
-        <Field key={x.key} label={x.label}>
+        <Field key={x.key} label={x.label} help={x.type === 'int' ? 'Lower numbers appear first in form dropdowns' : undefined}>
           {x.type === 'priority' ? (
             <select className="select" value={String(f[x.key] ?? 'medium')} onChange={(e) => setF({ ...f, [x.key]: e.target.value })}>
               {['low', 'medium', 'high', 'critical'].map((p) => <option key={p} value={p}>{cap(p)}</option>)}
             </select>
           ) : x.type === 'bool' ? (
             <label className="check"><input type="checkbox" checked={!!f[x.key]} onChange={(e) => setF({ ...f, [x.key]: e.target.checked ? 1 : 0 })} />Yes</label>
+          ) : x.type === 'int' ? (
+            <input type="number" min={0} className="input" style={{ maxWidth: 140 }} value={String(f[x.key] ?? 999)} onChange={(e) => setF({ ...f, [x.key]: e.target.value })} />
           ) : <input className="input" value={String(f[x.key] ?? '')} onChange={(e) => setF({ ...f, [x.key]: e.target.value })} />}
         </Field>
       ))}

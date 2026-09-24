@@ -6,8 +6,8 @@ import { stageName } from './stageDefs.ts';
 
 export function publicFormOptions() {
   return {
-    properties: all('SELECT id, name FROM properties WHERE active = 1 ORDER BY name COLLATE NOCASE'),
-    categories: all('SELECT id, name FROM work_categories WHERE active = 1 ORDER BY name COLLATE NOCASE'),
+    properties: all('SELECT id, name FROM properties WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE'),
+    categories: all('SELECT id, name FROM work_categories WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE'),
     work_types: WORK_TYPES,
   };
 }

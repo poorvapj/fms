@@ -1,4 +1,5 @@
 import { all, get, run, tx } from '../db/db.ts';
+import { DEFAULT_SORT, formSortOrder } from '../domain/formOrder.ts';
 import { PRIORITIES } from '../domain/workflow.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { badRequest, bool, conflict, int, notFound, oneOf, requiredStr, str } from '../utils/http.ts';
@@ -8,7 +9,7 @@ type MasterKind = 'properties' | 'categories' | 'engineers';
 interface MasterSpec {
   table: 'properties' | 'work_categories' | 'engineers';
   label: string;
-  fields: Record<string, 'text' | 'bool' | 'priority'>;
+  fields: Record<string, 'text' | 'bool' | 'priority' | 'int'>;
   /** Request columns that reference this master (for usage counts and merges). */
   refs: { table: string; column: string }[];
 }
@@ -16,12 +17,12 @@ interface MasterSpec {
 const SPECS: Record<MasterKind, MasterSpec> = {
   properties: {
     table: 'properties', label: 'Property',
-    fields: { code: 'text', type: 'text', address: 'text' },
+    fields: { code: 'text', type: 'text', address: 'text', sort_order: 'int' },
     refs: [{ table: 'requests', column: 'property_id' }],
   },
   categories: {
     table: 'work_categories', label: 'Work category',
-    fields: { description: 'text', default_priority: 'priority' },
+    fields: { description: 'text', default_priority: 'priority', sort_order: 'int' },
     refs: [{ table: 'requests', column: 'category_id' }],
   },
   engineers: {
@@ -48,14 +49,14 @@ export function listMaster(kind: MasterKind, opts: { includeInactive?: boolean }
        (SELECT u.username FROM users u WHERE u.engineer_id = m.id LIMIT 1) AS login_username`
     : `(SELECT COUNT(*) FROM requests r WHERE r.${s.refs[0].column} = m.id) AS request_count,
        (SELECT COUNT(*) FROM requests r WHERE r.${s.refs[0].column} = m.id AND r.status IN ('open','in_progress','pending_action','pending_approval','completed')) AS open_count`;
-  return all(`SELECT m.*, ${usage} FROM ${s.table} m ${opts.includeInactive ? '' : 'WHERE m.active = 1'} ORDER BY m.name COLLATE NOCASE`);
+  return all(`SELECT m.*, ${usage} FROM ${s.table} m ${opts.includeInactive ? '' : 'WHERE m.active = 1'} ORDER BY ${kind === 'engineers' ? '' : 'm.sort_order, '}m.name COLLATE NOCASE`);
 }
 
 function readFields(kind: MasterKind, body: any) {
   const out: Record<string, unknown> = {};
   for (const [f, t] of Object.entries(SPECS[kind].fields)) {
     if (body[f] === undefined) continue;
-    out[f] = t === 'bool' ? (bool(body[f]) ? 1 : 0) : t === 'priority' ? oneOf(body[f], PRIORITIES, 'Default priority') : str(body[f], 300);
+    out[f] = t === 'bool' ? (bool(body[f]) ? 1 : 0) : t === 'priority' ? oneOf(body[f], PRIORITIES, 'Default priority') : t === 'int' ? (int(body[f]) ?? DEFAULT_SORT) : str(body[f], 300);
   }
   return out;
 }
@@ -135,10 +136,11 @@ export function ensureMasterByName(table: 'properties' | 'work_categories' | 'en
   const row = get<{ id: number }>(`SELECT id FROM ${table} WHERE name = ?`, [name]);
   if (row) return { id: row.id, created: false };
   const now = nowLocal();
-  const cols = ['name', ...Object.keys(extra), 'created_at', 'updated_at'];
+  const withOrder = table === 'engineers' ? extra : { sort_order: formSortOrder(table, name), ...extra };
+  const cols = ['name', ...Object.keys(withOrder), 'created_at', 'updated_at'];
   const { lastInsertRowid } = run(
     `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
-    [name, ...(Object.values(extra) as any[]), now, now],
+    [name, ...(Object.values(withOrder) as any[]), now, now],
   );
   return { id: lastInsertRowid, created: true };
 }

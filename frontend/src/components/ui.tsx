@@ -83,12 +83,16 @@ export function Modal({ title, onClose, children, footer, wide }: { title: React
   );
 }
 
-export function Field({ label, required, help, children, full }: { label: string; required?: boolean; help?: ReactNode; children: ReactNode; full?: boolean }) {
+export function Field({ label, required, help, children, full, error, className }: {
+  label: string; required?: boolean; help?: ReactNode; children: ReactNode; full?: boolean; error?: string; className?: string;
+}) {
   return (
-    <div className={`field${full ? ' full' : ''}`}>
+    <div className={`field${full ? ' full' : ''}${error ? ' invalid' : ''}${className ? ` ${className}` : ''}`}>
       <label>{label}{required && <span className="req"> *</span>}</label>
+      {help && className === 'gq' && <div className="help">{help}</div>}
       {children}
-      {help && <div className="help">{help}</div>}
+      {help && className !== 'gq' && <div className="help">{help}</div>}
+      {error && <div className="field-error" role="alert"><Icon name="alert" size={14} />{error}</div>}
     </div>
   );
 }

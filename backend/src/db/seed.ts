@@ -2,13 +2,21 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from '../auth/auth.ts';
 import { ensureMasterByName } from '../services/masters.ts';
 import { nowLocal } from '../utils/dates.ts';
-import { get, run } from './db.ts';
+import { DEFAULT_SORT, formSortOrder } from '../domain/formOrder.ts';
+import { all, get, run } from './db.ts';
 
 const CLOSURE_CATEGORIES = ['Work Done', 'Service / Repair Complaint', 'Wrong Complaint', 'Duplicate', 'Rejected', 'Not Feasible', 'Other'];
 
 /** Idempotent base data required for the app to run. */
 export function ensureBaseData() {
   CLOSURE_CATEGORIES.forEach((name, i) => run('INSERT OR IGNORE INTO closure_categories (name, sort) VALUES (?, ?)', [name, i]));
+  // Give existing masters the Google Form dropdown order (only those never ordered by an admin).
+  for (const table of ['properties', 'work_categories'] as const) {
+    for (const r of all<{ id: number; name: string }>(`SELECT id, name FROM ${table} WHERE sort_order = ${DEFAULT_SORT}`)) {
+      const order = formSortOrder(table, r.name);
+      if (order !== DEFAULT_SORT) run(`UPDATE ${table} SET sort_order = ? WHERE id = ?`, [order, r.id]);
+    }
+  }
   const users = get<{ n: number }>('SELECT COUNT(*) AS n FROM users')!.n;
   if (!users) {
     const password = process.env.ADMIN_PASSWORD ?? 'Admin@12345';

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS properties (
   code TEXT,
   type TEXT,
   address TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 999,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS work_categories (
   name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   description TEXT,
   default_priority TEXT NOT NULL DEFAULT 'medium',
+  sort_order INTEGER NOT NULL DEFAULT 999,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

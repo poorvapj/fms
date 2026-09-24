@@ -15,6 +15,10 @@ const requestCols = new Set((db.prepare('PRAGMA table_info(requests)').all() as 
 for (const col of ['work_type', 'property_no', 'reason', 'requester_email']) {
   if (!requestCols.has(col)) db.exec(`ALTER TABLE requests ADD COLUMN ${col} TEXT`);
 }
+for (const table of ['properties', 'work_categories']) {
+  const cols = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has('sort_order')) db.exec(`ALTER TABLE ${table} ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 999`);
+}
 
 function bind(sql: string, params?: Params): SQLInputValue[] | [Record<string, SQLInputValue>] {
   if (params === undefined) return [];
