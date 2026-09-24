@@ -520,6 +520,7 @@ export function RequestDetail() {
               {r.current_stage_name && <span className="muted">Current stage: <b style={{ color: 'var(--text)' }}>{r.current_stage_name}</b>{r.current_stage_planned_at ? ` · due ${fmtDateTime(r.current_stage_planned_at)}` : ''}</span>}
             </div>
           </div>
+          <a className="btn sm" href={`/job-cards/${r.id}/print`} target="_blank" rel="noreferrer"><Icon name="download" size={14} />Print Job Card</a>
         </div>
         {(r.hold_reason || r.cancel_reason) && (
           <div style={{ padding: '0 20px 14px' }}>

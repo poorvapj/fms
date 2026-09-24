@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './lib/auth';
 import { Account } from './pages/Account';
 import { Dashboard } from './pages/Dashboard';
 import { ImportBatch, ImportHistory, ImportWizard } from './pages/Import';
+import { JobCardPrint } from './pages/JobCardPrint';
 import { Login } from './pages/Login';
 import { Masters, UsersPage } from './pages/Masters';
 import { MyJobs } from './pages/MyJobs';
@@ -49,6 +50,7 @@ function App() {
       <Route path="/submit" element={<PublicForm />} />
       <Route path="/track/:token" element={<TrackRequest />} />
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/job-cards/:id/print" element={<RequireAuth><JobCardPrint /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Home />} />
         <Route path="job-cards" element={<JobCards />} />
