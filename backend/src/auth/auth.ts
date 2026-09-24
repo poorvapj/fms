@@ -49,16 +49,17 @@ export async function login(username: string, password: string, ip: string, res:
   const key = `${username.toLowerCase()}|${ip}`;
   const f = failures.get(key);
   if (f && f.count >= 10 && f.until > Date.now()) throw new HttpError(429, 'Too many failed attempts. Try again later.');
-  // Sign in with either the username or the email address (emails are unique across users).
+  // Sign in with either the username or the email address (emails are unique across users) — one query, not two.
   const ci = { locale: 'en', strength: 2 } as const;
-  const row = (await col.users().findOne({ username }, { collation: ci })) ?? (await col.users().findOne({ email: username }, { collation: ci }));
+  const row = await col.users().findOne({ $or: [{ username }, { email: username }] }, { collation: ci });
   const ok = row && row.active && bcrypt.compareSync(password, row.password_hash);
   if (!ok) {
     failures.set(key, { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + 15 * 60000 });
     throw new HttpError(401, 'Invalid username or password');
   }
   failures.delete(key);
-  await col.users().updateOne({ _id: row._id }, { $set: { last_login_at: nowLocal() } });
+  // Not needed to complete sign-in — don't make the user wait on it.
+  col.users().updateOne({ _id: row._id }, { $set: { last_login_at: nowLocal() } }).catch(() => {});
   const token = jwt.sign({ sub: String(row._id) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
   res.cookie(COOKIE, token, {
     httpOnly: true,
@@ -67,7 +68,7 @@ export async function login(username: string, password: string, ip: string, res:
     maxAge: config.sessionHours * 3600000,
     path: '/',
   });
-  return (await loadUser(row._id))!;
+  return { id: row._id, username: row.username, name: row.name, role: row.role, engineer_id: row.engineer_id ?? null, must_change_password: !!row.must_change_password };
 }
 
 export function logout(res: Response) {
