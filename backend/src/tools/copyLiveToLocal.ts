@@ -1,38 +1,49 @@
 // Refresh the LOCAL test database with a copy of the LIVE data (live is only read, never changed).
-// Usage: npm run copy-live-to-local        (stop the local backend first; live may keep running)
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+// Reads MONGODB_URI / MONGODB_DB from backend/.env.live and backend/.env.local.
+// Usage: npm run copy-live-to-local
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
+import { MongoClient } from 'mongodb';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const liveDir = path.join(root, 'data', 'live');
-const localDir = path.join(root, 'data', 'local');
-const liveDb = path.join(liveDir, 'fms.db');
-const localDb = path.join(localDir, 'fms.db');
+function target(env: 'live' | 'local') {
+  const file = path.join(root, `.env.${env}`);
+  const vars = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  const uri = vars.MONGODB_URI;
+  if (!uri) throw new Error(`MONGODB_URI missing in backend/.env.${env}`);
+  return { uri, db: vars.MONGODB_DB ?? (env === 'live' ? 'fms_live' : 'fms_local') };
+}
 
-if (!existsSync(liveDb)) {
-  console.error(`No live database found at ${liveDb}`);
+const live = target('live');
+const local = target('local');
+if (live.uri === local.uri && live.db === local.db) {
+  console.error('Local and Live point at the same MongoDB database — refusing to copy.');
   process.exit(1);
 }
-mkdirSync(localDir, { recursive: true });
+
+const src = await MongoClient.connect(live.uri);
+const dst = await MongoClient.connect(local.uri);
 try {
-  for (const f of ['fms.db', 'fms.db-wal', 'fms.db-shm']) rmSync(path.join(localDir, f), { force: true });
-} catch {
-  console.error('The local database is in use. Stop the LOCAL backend (npm start) and try again.');
-  process.exit(1);
+  const from = src.db(live.db);
+  const to = dst.db(local.db);
+  for (const { name } of await to.listCollections({}, { nameOnly: true }).toArray()) {
+    if (!name.startsWith('system.')) await to.collection(name).drop();
+  }
+  for (const { name } of await from.listCollections({}, { nameOnly: true }).toArray()) {
+    if (name.startsWith('system.') || name === 'import_uploads') continue;
+    let batch: any[] = [];
+    let n = 0;
+    for await (const doc of from.collection(name).find()) {
+      batch.push(doc);
+      if (batch.length === 500) { await to.collection(name).insertMany(batch, { ordered: false }); n += batch.length; batch = []; }
+    }
+    if (batch.length) { await to.collection(name).insertMany(batch, { ordered: false }); n += batch.length; }
+    console.log(`  ${name.padEnd(22)} ${n}`);
+  }
+  console.log(`\nLocal test database "${local.db}" refreshed from live "${live.db}". Indexes are rebuilt when the local backend starts.`);
+} finally {
+  await src.close();
+  await dst.close();
 }
-
-// VACUUM INTO takes a consistent snapshot even while the live backend is running.
-const src = new DatabaseSync(liveDb, { readOnly: true });
-src.exec(`VACUUM INTO '${localDb.replace(/'/g, "''")}'`);
-src.close();
-
-const liveUploads = path.join(liveDir, 'uploads');
-const localUploads = path.join(localDir, 'uploads');
-rmSync(localUploads, { recursive: true, force: true });
-if (existsSync(liveUploads)) cpSync(liveUploads, localUploads, { recursive: true });
-else mkdirSync(localUploads, { recursive: true });
-
-console.log(`Local test database refreshed from live:\n  ${liveDb}\n  → ${localDb}`);
-console.log('Local keeps its own login secret, so sign in again on the local app.');

@@ -46,7 +46,9 @@ Data quality issues the importer handles:
 
 ---
 
-## 1. Data model (SQLite)
+## 1. Data model (MongoDB)
+
+> Storage is MongoDB (Atlas). Each job card is one `requests` document with its workflow **stages embedded** (`requests.stages[]`); saves use optimistic concurrency (`version`). Other collections: `users`, `properties`, `work_categories`, `engineers`, `closure_categories`, `workflow_stages`, `request_events`, `attachments` (photos in GridFS bucket `uploads`), `legacy_rows`, `import_batches`, `import_issues`, `import_uploads` (auto-expire after 1 day), `counters` (numeric ids and JC numbers). The logical model below is unchanged; table names map to collection names.
 
 ```
 users ─┐            properties   work_categories   engineers   closure_categories   workflow_stages

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.ts';
-import { get, run } from '../db/db.ts';
+import { col } from '../db/mongo.ts';
 import { can, ROLE_PERMISSIONS, type Permission, type Role } from '../domain/permissions.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { HttpError, forbidden } from '../utils/http.ts';
@@ -36,33 +36,30 @@ export function validatePassword(pw: unknown): string {
   return s;
 }
 
-function loadUser(id: number): AuthUser | null {
-  const u = get('SELECT id, username, name, role, engineer_id, must_change_password, active FROM users WHERE id = ?', [id]);
+async function loadUser(id: number): Promise<AuthUser | null> {
+  const u = await col.users().findOne({ _id: id }, { projection: { password_hash: 0 } });
   if (!u || !u.active) return null;
-  return { id: u.id, username: u.username, name: u.name, role: u.role, engineer_id: u.engineer_id, must_change_password: !!u.must_change_password };
+  return { id: u._id, username: u.username, name: u.name, role: u.role, engineer_id: u.engineer_id ?? null, must_change_password: !!u.must_change_password };
 }
 
 // Simple in-memory login throttle: 10 failed attempts per username+ip per 15 minutes.
 const failures = new Map<string, { count: number; until: number }>();
 
-export function login(username: string, password: string, ip: string, res: Response): AuthUser {
+export async function login(username: string, password: string, ip: string, res: Response): Promise<AuthUser> {
   const key = `${username.toLowerCase()}|${ip}`;
   const f = failures.get(key);
   if (f && f.count >= 10 && f.until > Date.now()) throw new HttpError(429, 'Too many failed attempts. Try again later.');
   // Sign in with either the username or the email address (emails are unique across users).
-  const row = get(
-    `SELECT id, password_hash, active FROM users WHERE username = ? COLLATE NOCASE OR (email IS NOT NULL AND lower(email) = lower(?))
-     ORDER BY username = ? COLLATE NOCASE DESC LIMIT 1`,
-    [username, username, username],
-  );
+  const ci = { locale: 'en', strength: 2 } as const;
+  const row = (await col.users().findOne({ username }, { collation: ci })) ?? (await col.users().findOne({ email: username }, { collation: ci }));
   const ok = row && row.active && bcrypt.compareSync(password, row.password_hash);
   if (!ok) {
     failures.set(key, { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + 15 * 60000 });
     throw new HttpError(401, 'Invalid username or password');
   }
   failures.delete(key);
-  run('UPDATE users SET last_login_at = ? WHERE id = ?', [nowLocal(), row.id]);
-  const token = jwt.sign({ sub: String(row.id) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
+  await col.users().updateOne({ _id: row._id }, { $set: { last_login_at: nowLocal() } });
+  const token = jwt.sign({ sub: String(row._id) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: config.cookieSameSite,
@@ -70,24 +67,29 @@ export function login(username: string, password: string, ip: string, res: Respo
     maxAge: config.sessionHours * 3600000,
     path: '/',
   });
-  return loadUser(row.id)!;
+  return (await loadUser(row._id))!;
 }
 
 export function logout(res: Response) {
   res.clearCookie(COOKIE, { path: '/' });
 }
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   const token = req.cookies?.[COOKIE];
   if (!token) return next(new HttpError(401, 'Not signed in'));
+  let payload: jwt.JwtPayload;
   try {
-    const payload = jwt.verify(token, config.jwtSecret) as jwt.JwtPayload;
-    const user = loadUser(Number(payload.sub));
+    payload = jwt.verify(token, config.jwtSecret) as jwt.JwtPayload;
+  } catch {
+    return next(new HttpError(401, 'Session expired'));
+  }
+  try {
+    const user = await loadUser(Number(payload.sub));
     if (!user) return next(new HttpError(401, 'Session expired'));
     req.user = user;
     next();
-  } catch {
-    next(new HttpError(401, 'Session expired'));
+  } catch (err) {
+    next(err);
   }
 }
 

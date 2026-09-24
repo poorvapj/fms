@@ -1,4 +1,4 @@
-// End-to-end API test: boots the real server on a temp database and walks a request through the whole workflow.
+// End-to-end API test: boots the real server on a throwaway in-memory MongoDB and walks a request through the whole workflow.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -6,12 +6,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = mkdtempSync(path.join(tmpdir(), 'fms-e2e-'));
 const port = 4700 + Math.floor(Math.random() * 200);
 const base = `http://127.0.0.1:${port}/api`;
 let server: ChildProcess;
+let mongo: MongoMemoryServer;
 
 // 1×1 PNG
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -47,7 +49,8 @@ const imageForm = (fields: Record<string, string>, withImage = true) => {
 };
 
 before(async () => {
-  const env = { ...process.env, PORT: String(port), FMS_DATA_DIR: dataDir, ADMIN_PASSWORD: 'Admin@12345' };
+  mongo = await MongoMemoryServer.create();
+  const env = { ...process.env, PORT: String(port), FMS_DATA_DIR: dataDir, ADMIN_PASSWORD: 'Admin@12345', MONGODB_URI: mongo.getUri(), MONGODB_DB: 'fms_test' };
   const seed = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/db/seed.ts'], { cwd: root, env });
   await new Promise((r) => seed.on('exit', r));
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/index.ts'], { cwd: root, env, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -57,8 +60,9 @@ before(async () => {
   });
 });
 
-after(() => {
+after(async () => {
   server?.kill();
+  await mongo?.stop();
   try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* windows file locks */ }
 });
 

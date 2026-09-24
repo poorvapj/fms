@@ -1,13 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import type { AuthUser } from '../auth/auth.ts';
-import { config } from '../config.ts';
-import { all, get, nextSequence, run, tx } from '../db/db.ts';
+import { col, nextId, withId, type Doc } from '../db/mongo.ts';
 import { deriveState, DEFAULT_STAGES, type StageKey } from '../domain/workflow.ts';
-import { logEvent } from '../services/events.ts';
+import { eventDoc } from '../services/events.ts';
 import { ensureMasterByName } from '../services/masters.ts';
-import { refreshRequestState } from '../services/workflowEngine.ts';
+import { nextJobNumbers } from '../services/requests.ts';
+import { blankStage, refreshState, type RequestDoc, type StageDoc } from '../services/workflowEngine.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { badRequest, conflict, int, notFound } from '../utils/http.ts';
 import { detectLayout, type Layout } from './layout.ts';
@@ -15,12 +13,8 @@ import { proposeMapping, TARGETS, validateMapping, type Mapping } from './mappin
 import { parseDelimited } from './parser.ts';
 import { DEFAULT_OPTIONS, transformRow, whoByStage, type ImportOptions, type Issue, type PlannedRecord } from './transform.ts';
 
-interface UploadMeta { id: string; file_name: string; size: number; uploaded_by: number; created_at: string }
-
-const uploadPath = (id: string, ext: string) => {
-  if (!/^[a-f0-9]{32}$/.test(id)) throw badRequest('Invalid upload id');
-  return path.join(config.importsDir, `${id}.${ext}`);
-};
+/** Upload files are kept in MongoDB between wizard steps (so any server instance can continue the wizard). */
+export const MAX_IMPORT_MB = 15;
 
 function decode(buf: Buffer): string {
   const utf8 = buf.toString('utf8');
@@ -28,12 +22,12 @@ function decode(buf: Buffer): string {
   return bad > 5 ? buf.toString('latin1') : utf8;
 }
 
-function loadUpload(id: string, user: AuthUser): { text: string; meta: UploadMeta } {
-  const metaFile = uploadPath(id, 'json');
-  if (!existsSync(metaFile)) throw notFound('Upload (it may have expired or already been imported)');
-  const meta = JSON.parse(readFileSync(metaFile, 'utf8')) as UploadMeta;
-  if (meta.uploaded_by !== user.id && user.role !== 'admin') throw notFound('Upload');
-  return { text: readFileSync(uploadPath(id, 'txt'), 'utf8'), meta };
+async function loadUpload(id: string, user: AuthUser): Promise<{ text: string; meta: Doc }> {
+  if (!/^[a-f0-9]{32}$/.test(id)) throw badRequest('Invalid upload id');
+  const u = await col.importUploads().findOne({ _id: id });
+  if (!u) throw notFound('Upload (it may have expired or already been imported)');
+  if (u.uploaded_by !== user.id && user.role !== 'admin') throw notFound('Upload');
+  return { text: u.text, meta: u };
 }
 
 function analyse(text: string): { rows: string[][]; delimiter: string; layout: Layout } {
@@ -42,19 +36,20 @@ function analyse(text: string): { rows: string[][]; delimiter: string; layout: L
   return { rows, delimiter, layout: detectLayout(rows) };
 }
 
-export function saveUpload(file: { buffer: Buffer; originalname: string; size: number }, user: AuthUser) {
+export async function saveUpload(file: { buffer: Buffer; originalname: string; size: number }, user: AuthUser) {
   if (!/\.(tsv|csv|txt)$/i.test(file.originalname)) throw badRequest('Upload a .tsv or .csv file');
+  if (file.size > MAX_IMPORT_MB * 1024 * 1024) throw badRequest(`Import files are limited to ${MAX_IMPORT_MB} MB`);
   const id = randomBytes(16).toString('hex');
   const text = decode(file.buffer);
   analyse(text); // fail fast on unusable files
-  writeFileSync(uploadPath(id, 'txt'), text, 'utf8');
-  const meta: UploadMeta = { id, file_name: file.originalname, size: file.size, uploaded_by: user.id, created_at: nowLocal() };
-  writeFileSync(uploadPath(id, 'json'), JSON.stringify(meta));
+  await col.importUploads().insertOne({
+    _id: id, text, file_name: file.originalname, size: file.size, uploaded_by: user.id, created_at: nowLocal(), created_at_date: new Date(),
+  });
   return preview(id, user);
 }
 
-export function preview(uploadId: string, user: AuthUser) {
-  const { text, meta } = loadUpload(uploadId, user);
+export async function preview(uploadId: string, user: AuthUser) {
+  const { text, meta } = await loadUpload(uploadId, user);
   const { rows, delimiter, layout } = analyse(text);
   const width = layout.columns.length;
   return {
@@ -83,15 +78,19 @@ function readOptions(o: any): ImportOptions {
 type Action = 'create' | 'update' | 'skip_existing' | 'skip_modified' | 'skip_duplicate';
 interface PlanItem { record: PlannedRecord; action: Action; existing_id?: number }
 
-function buildPlan(text: string, mapping: Mapping, options: ImportOptions) {
+
+async function buildPlan(text: string, mapping: Mapping, options: ImportOptions) {
   const { rows, layout } = analyse(text);
   const mappingErrors = validateMapping(mapping, layout.columns.length);
   if (mappingErrors.length) throw badRequest('Column mapping is incomplete', mappingErrors);
 
   const who = whoByStage(layout.stages);
-  const existing = new Map(all('SELECT legacy_key, id, modified_in_app FROM requests WHERE legacy_key IS NOT NULL').map((r) => [r.legacy_key, r]));
-  const names = (table: string) => new Set(all(`SELECT name FROM ${table}`).map((r) => String(r.name).toLowerCase()));
-  const known = { properties: names('properties'), work_categories: names('work_categories'), engineers: names('engineers') };
+  const existing = new Map(
+    (await col.requests().find({ legacy_key: { $type: 'string' } }, { projection: { legacy_key: 1, modified_in_app: 1 } }).toArray())
+      .map((r) => [r.legacy_key as string, r]),
+  );
+  const names = async (c: ReturnType<typeof col.properties>) => new Set((await c.find({}, { projection: { name: 1 } }).toArray()).map((r) => String(r.name).toLowerCase()));
+  const known = { properties: await names(col.properties()), work_categories: await names(col.categories()), engineers: await names(col.engineers()) };
   const toCreate = { properties: new Map<string, string>(), work_categories: new Map<string, string>(), engineers: new Map<string, string>() };
 
   const issues: Issue[] = [];
@@ -136,11 +135,11 @@ function buildPlan(text: string, mapping: Mapping, options: ImportOptions) {
     seen.add(record.legacy_key);
     const ex = existing.get(record.legacy_key);
     if (!ex) items.push({ record, action: 'create' });
-    else if (options.mode === 'skip') items.push({ record, action: 'skip_existing', existing_id: ex.id });
+    else if (options.mode === 'skip') items.push({ record, action: 'skip_existing', existing_id: ex._id });
     else if (ex.modified_in_app) {
       issues.push({ row_no: rowNo, severity: 'warning', field: 'Row', message: 'Already imported and changed in the app since — not overwritten' });
-      items.push({ record, action: 'skip_modified', existing_id: ex.id });
-    } else items.push({ record, action: 'update', existing_id: ex.id });
+      items.push({ record, action: 'skip_modified', existing_id: ex._id });
+    } else items.push({ record, action: 'update', existing_id: ex._id });
   }
   return { layout, issues, items, errorRows, totalRows, toCreate };
 }
@@ -152,7 +151,7 @@ function outcomeStatus(rec: PlannedRecord) {
   ).status;
 }
 
-function summarise(plan: ReturnType<typeof buildPlan>) {
+function summarise(plan: Awaited<ReturnType<typeof buildPlan>>) {
   const count = (a: Action) => plan.items.filter((i) => i.action === a).length;
   const warningRows = new Set(plan.issues.filter((i) => i.severity === 'warning').map((i) => i.row_no)).size;
   const grouped = new Map<string, { severity: string; field: string; message: string; count: number; rows: number[] }>();
@@ -189,9 +188,9 @@ function summarise(plan: ReturnType<typeof buildPlan>) {
   };
 }
 
-export function validateImport(uploadId: string, body: any, user: AuthUser) {
-  const { text } = loadUpload(uploadId, user);
-  const plan = buildPlan(text, body.mapping ?? {}, readOptions(body.options));
+export async function validateImport(uploadId: string, body: any, user: AuthUser) {
+  const { text } = await loadUpload(uploadId, user);
+  const plan = await buildPlan(text, body.mapping ?? {}, readOptions(body.options));
   const samples = plan.items.filter((i) => i.action === 'create' || i.action === 'update').slice(0, 5).map((i) => ({
     row_no: i.record.row_no,
     requested_at: i.record.requested_at,
@@ -208,165 +207,206 @@ export function validateImport(uploadId: string, body: any, user: AuthUser) {
   return { summary: summarise(plan), issues: plan.issues.slice(0, 3000), samples };
 }
 
-export function commitImport(uploadId: string, body: any, user: AuthUser) {
-  const { text, meta } = loadUpload(uploadId, user);
+export async function commitImport(uploadId: string, body: any, user: AuthUser) {
+  const { text, meta } = await loadUpload(uploadId, user);
   const options = readOptions(body.options);
   const mapping: Mapping = body.mapping ?? {};
-  const plan = buildPlan(text, mapping, options);
+  const plan = await buildPlan(text, mapping, options);
   const summary = summarise(plan);
   if (!summary.create && !summary.update) throw conflict('Nothing to import — every row is an error or already imported');
   const now = nowLocal();
   const heldAt = plan.layout.export_at ?? now;
+  const work = plan.items.filter((i) => i.action === 'create' || i.action === 'update');
 
-  const result = tx(() => {
-    const batchId = run(
-      `INSERT INTO import_batches (file_name, file_size, export_at, mode, options, mapping, columns, total_rows, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [meta.file_name, meta.size, plan.layout.export_at, options.mode, JSON.stringify(options), JSON.stringify(mapping),
-        JSON.stringify(plan.layout.columns.map((c) => ({ index: c.index, letter: c.letter, group: c.group, header: c.header }))), plan.totalRows, user.id, now],
-    ).lastInsertRowid;
+  const batchId = await nextId('import_batches');
+  await col.batches().insertOne({
+    _id: batchId, file_name: meta.file_name, file_size: meta.size, export_at: plan.layout.export_at, mode: options.mode, options, mapping,
+    columns: plan.layout.columns.map((c) => ({ index: c.index, letter: c.letter, group: c.group, header: c.header })),
+    total_rows: plan.totalRows, created_count: 0, updated_count: 0, skipped_count: 0, error_count: 0, warning_count: 0,
+    summary: null, status: 'in_progress', created_by: user.id, created_at: now, rolled_back_at: null,
+  });
 
+  try {
+    // Masters (find or create, once per name)
     const ids = { properties: new Map<string, number>(), work_categories: new Map<string, number>(), engineers: new Map<string, number>() };
-    const idOf = (table: keyof typeof ids, name: string | null): number | null => {
+    const idOf = async (table: keyof typeof ids, name: string | null): Promise<number | null> => {
       if (!name) return null;
       const k = name.toLowerCase();
       let id = ids[table].get(k);
       if (id === undefined) {
-        id = ensureMasterByName(table, name, table === 'engineers' && /external/i.test(name) ? { is_external: 1 } : {}).id;
+        id = (await ensureMasterByName(table, name, table === 'engineers' && /external/i.test(name) ? { is_external: 1 } : {})).id;
         ids[table].set(k, id);
       }
       return id;
     };
 
-    let created = 0;
-    let updated = 0;
-    for (const item of plan.items) {
-      if (item.action !== 'create' && item.action !== 'update') continue;
-      const rec = item.record;
-      const propertyId = idOf('properties', rec.property)!;
-      const categoryId = idOf('work_categories', rec.category)!;
-      const siteEng = idOf('engineers', rec.site_engineer);
-      const assignedEng = idOf('engineers', rec.assigned_engineer);
-      const fields = [
-        rec.title, rec.description, propertyId, categoryId, rec.priority, rec.requested_at, rec.requester_name, rec.target_date,
-        siteEng, assignedEng,
-        rec.stages.some((s) => s.key === 'ph_discussion' && s.status !== 'skipped') ? 1 : 0,
-        rec.stages.some((s) => s.key === 'material' && s.status !== 'skipped') ? 1 : 0,
-        rec.stages.some((s) => s.key === 'permission' && s.status !== 'skipped') ? 1 : 0,
-        rec.hold_reason ? heldAt : null, rec.hold_reason, rec.cancel_reason ? heldAt : null, rec.cancel_reason,
-        rec.closure_category, rec.closure_note, rec.verified_by_name, rec.row_no,
-        rec.requester_email, rec.work_type, rec.property_no, rec.reason,
-      ];
-      let requestId: number;
-      if (item.action === 'create') {
-        const year = rec.requested_at.slice(0, 4);
-        const requestNo = `JC-${year}-${String(nextSequence(`jobcard-${year}`)).padStart(6, '0')}`;
-        requestId = run(
-          `INSERT INTO requests (title, description, property_id, category_id, priority, requested_at, requester_name, target_date,
-             site_engineer_id, assigned_engineer_id, requires_ph_discussion, requires_material, requires_permission,
-             held_at, hold_reason, cancelled_at, cancel_reason, closure_category, closure_note, verified_by_name, import_row_no,
-             requester_email, work_type, property_no, reason,
-             request_no, source, status, legacy_key, import_batch_id, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fms_import', 'open', ?, ?, ?, ?, ?)`,
-          [...fields, requestNo, rec.legacy_key, batchId, user.id, now, now],
-        ).lastInsertRowid;
-        created++;
-        logEvent(requestId, 'imported', `Imported from FMS "${meta.file_name}" (sheet row ${rec.row_no}, batch #${batchId})`, { user, at: now });
-      } else {
-        requestId = item.existing_id!;
-        run(
-          `UPDATE requests SET title = ?, description = ?, property_id = ?, category_id = ?, priority = ?, requested_at = ?, requester_name = ?, target_date = ?,
-             site_engineer_id = ?, assigned_engineer_id = ?, requires_ph_discussion = ?, requires_material = ?, requires_permission = ?,
-             held_at = ?, hold_reason = ?, cancelled_at = ?, cancel_reason = ?, closure_category = ?, closure_note = ?, verified_by_name = ?, import_row_no = ?,
-             requester_email = ?, work_type = ?, property_no = ?, reason = ?, updated_at = ? WHERE id = ?`,
-          [...fields, now, requestId],
-        );
-        run('DELETE FROM request_stages WHERE request_id = ?', [requestId]);
-        run(`DELETE FROM attachments WHERE request_id = ? AND source = 'fms_import'`, [requestId]);
-        run('DELETE FROM legacy_rows WHERE request_id = ?', [requestId]);
-        updated++;
-        logEvent(requestId, 'imported', `Refreshed from FMS "${meta.file_name}" (sheet row ${rec.row_no}, batch #${batchId})`, { user, at: now });
-      }
+    // Reserve ids and job numbers in blocks
+    const creates = work.filter((i) => i.action === 'create');
+    const firstRequestId = creates.length ? await nextId('requests', creates.length) : 0;
+    const byYear = new Map<string, PlanItem[]>();
+    for (const it of creates) byYear.set(it.record.requested_at.slice(0, 4), [...(byYear.get(it.record.requested_at.slice(0, 4)) ?? []), it]);
+    const jobNo = new Map<PlanItem, string>();
+    for (const [year, list] of byYear) {
+      const nos = await nextJobNumbers(year, list.length);
+      list.forEach((it, i) => jobNo.set(it, nos[i]));
+    }
+    const attCount = work.reduce((n, it) => n + it.record.location_images.length + it.record.completion_images.length, 0);
+    let attId = attCount ? await nextId('attachments', attCount) : 0;
+    let evId = await nextId('request_events', work.length);
 
+    const newDocs: RequestDoc[] = [];
+    const attachments: Doc[] = [];
+    const legacy: Doc[] = [];
+    const events: Doc[] = [];
+    const updates: RequestDoc[] = [];
+    let createdIdx = 0;
+
+    for (const item of work) {
+      const rec = item.record;
+      const stages: StageDoc[] = [];
       for (const s of rec.stages) {
         const def = DEFAULT_STAGES.find((d) => d.key === s.key)!;
-        run(
-          `INSERT INTO request_stages (request_id, stage_key, seq, status, planned_at, actual_at, delay_minutes, responsible_role, responsible_name,
-             engineer_id, decision, comments, planned_inferred, actual_inferred, source, legacy, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fms_import', ?, ?)`,
-          [requestId, s.key, def.seq, s.status, s.planned_at, s.actual_at, s.delay_minutes, def.responsibleLabel, s.responsible_name,
-            idOf('engineers', s.engineer), def.decision && s.status === 'completed' ? 'approved' : null, s.comments,
-            s.planned_inferred ? 1 : 0, s.actual_inferred ? 1 : 0, s.legacy ? JSON.stringify(s.legacy) : null, now],
-        );
+        const st = blankStage(s.key as StageKey, def.seq, now);
+        Object.assign(st, {
+          status: s.status, planned_at: s.planned_at, actual_at: s.actual_at, delay_minutes: s.delay_minutes, responsible_role: def.responsibleLabel,
+          responsible_name: s.responsible_name, engineer_id: await idOf('engineers', s.engineer), decision: def.decision && s.status === 'completed' ? 'approved' : null,
+          comments: s.comments, planned_inferred: s.planned_inferred, actual_inferred: s.actual_inferred, source: 'fms_import', legacy: s.legacy,
+        });
+        stages.push(st);
       }
-      const attach = (stage: StageKey, url: string, caption: string) =>
-        run(`INSERT INTO attachments (request_id, stage_key, kind, url, caption, source, created_at) VALUES (?, ?, 'url', ?, ?, 'fms_import', ?)`,
-          [requestId, stage, url, caption, rec.requested_at]);
-      rec.location_images.forEach((u, i) => attach('created', u, rec.location_images.length > 1 ? `Image of location ${i + 1}` : 'Image of location'));
+      const fields = {
+        title: rec.title, description: rec.description, property_id: await idOf('properties', rec.property), category_id: await idOf('work_categories', rec.category),
+        priority: rec.priority, requested_at: rec.requested_at, requester_name: rec.requester_name, requester_email: rec.requester_email,
+        work_type: rec.work_type, property_no: rec.property_no, reason: rec.reason, target_date: rec.target_date,
+        site_engineer_id: await idOf('engineers', rec.site_engineer), assigned_engineer_id: await idOf('engineers', rec.assigned_engineer),
+        requires_ph_discussion: rec.stages.some((s) => s.key === 'ph_discussion' && s.status !== 'skipped') ? 1 : 0,
+        requires_material: rec.stages.some((s) => s.key === 'material' && s.status !== 'skipped') ? 1 : 0,
+        requires_permission: rec.stages.some((s) => s.key === 'permission' && s.status !== 'skipped') ? 1 : 0,
+        held_at: rec.hold_reason ? heldAt : null, hold_reason: rec.hold_reason, cancelled_at: rec.cancel_reason ? heldAt : null, cancel_reason: rec.cancel_reason,
+        closure_category: rec.closure_category, closure_note: rec.closure_note, verified_by_name: rec.verified_by_name, import_row_no: rec.row_no,
+        stages, updated_at: now,
+      };
+      let requestId: number;
+      if (item.action === 'create') {
+        requestId = firstRequestId + createdIdx++;
+        const doc = {
+          _id: requestId, request_no: jobNo.get(item)!, source: 'fms_import', legacy_key: rec.legacy_key, import_batch_id: batchId,
+          location_detail: null, requester_contact: null, created_by: user.id, public_token: null, requester_ip: null,
+          status: 'open', current_stage_key: null, current_stage_planned_at: null, completed_at: null, closed_at: null,
+          modified_in_app: false, version: 1, created_at: now, ...fields,
+        } as RequestDoc;
+        refreshState(doc, { rollForward: false });
+        newDocs.push(doc);
+        events.push(eventDoc(evId++, requestId, 'imported', `Imported from FMS "${meta.file_name}" (sheet row ${rec.row_no}, batch #${batchId})`, { user, at: now }));
+      } else {
+        requestId = item.existing_id!;
+        const existing = (await col.requests().findOne({ _id: requestId })) as RequestDoc;
+        const doc = { ...existing, ...fields, version: (existing.version ?? 0) + 1 } as RequestDoc;
+        refreshState(doc, { rollForward: false });
+        updates.push(doc);
+        events.push(eventDoc(evId++, requestId, 'imported', `Refreshed from FMS "${meta.file_name}" (sheet row ${rec.row_no}, batch #${batchId})`, { user, at: now }));
+      }
+      rec.location_images.forEach((u, i) => attachments.push({
+        _id: attId++, request_id: requestId, stage_key: 'created', kind: 'url', url: u,
+        caption: rec.location_images.length > 1 ? `Image of location ${i + 1}` : 'Image of location', source: 'fms_import', uploaded_by: null, created_at: rec.requested_at,
+      }));
       const wcAt = rec.stages.find((s) => s.key === 'work_completed')?.actual_at;
-      rec.completion_images.forEach((u, i) => {
-        run(`INSERT INTO attachments (request_id, stage_key, kind, url, caption, source, created_at) VALUES (?, 'work_completed', 'url', ?, ?, 'fms_import', ?)`,
-          [requestId, u, rec.completion_images.length > 1 ? `Completion image ${i + 1}` : 'Completion image', wcAt ?? rec.requested_at]);
-      });
-      run('INSERT INTO legacy_rows (request_id, batch_id, row_no, cells) VALUES (?, ?, ?, ?)', [requestId, batchId, rec.row_no, JSON.stringify(rec.cells)]);
-      refreshRequestState(requestId, { rollForward: false });
+      rec.completion_images.forEach((u, i) => attachments.push({
+        _id: attId++, request_id: requestId, stage_key: 'work_completed', kind: 'url', url: u,
+        caption: rec.completion_images.length > 1 ? `Completion image ${i + 1}` : 'Completion image', source: 'fms_import', uploaded_by: null, created_at: wcAt ?? rec.requested_at,
+      }));
+      legacy.push({ _id: requestId, request_id: requestId, batch_id: batchId, row_no: rec.row_no, cells: rec.cells });
     }
 
-    for (const i of plan.issues) {
-      run('INSERT INTO import_issues (batch_id, row_no, severity, field, message, value) VALUES (?, ?, ?, ?, ?, ?)',
-        [batchId, i.row_no, i.severity, i.field, i.message, i.value?.slice(0, 500) ?? null]);
+    const updatedIds = updates.map((u) => u._id);
+    if (updatedIds.length) {
+      await col.attachments().deleteMany({ request_id: { $in: updatedIds }, source: 'fms_import' });
+      await col.legacyRows().deleteMany({ request_id: { $in: updatedIds } });
+      for (const u of updates) await col.requests().replaceOne({ _id: u._id }, u);
     }
+    const CHUNK = 500;
+    for (let i = 0; i < newDocs.length; i += CHUNK) await col.requests().insertMany(newDocs.slice(i, i + CHUNK), { ordered: false });
+    for (let i = 0; i < attachments.length; i += CHUNK) await col.attachments().insertMany(attachments.slice(i, i + CHUNK), { ordered: false });
+    for (let i = 0; i < legacy.length; i += CHUNK) await col.legacyRows().insertMany(legacy.slice(i, i + CHUNK), { ordered: false });
+    for (let i = 0; i < events.length; i += CHUNK) await col.events().insertMany(events.slice(i, i + CHUNK), { ordered: false });
+    if (plan.issues.length) {
+      const firstIssue = await nextId('import_issues', plan.issues.length);
+      const docs = plan.issues.map((iss, k) => ({ _id: firstIssue + k, batch_id: batchId, row_no: iss.row_no, severity: iss.severity, field: iss.field, message: iss.message, value: iss.value?.slice(0, 500) ?? null }));
+      for (let i = 0; i < docs.length; i += CHUNK) await col.issues().insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+    }
+
     const skipped = summary.skip_existing + summary.skip_modified + summary.skip_duplicate;
-    const finalSummary = { ...summary, created, updated, masters_created: summary.masters_to_create };
-    run(
-      `UPDATE import_batches SET created_count = ?, updated_count = ?, skipped_count = ?, error_count = ?, warning_count = ?, summary = ? WHERE id = ?`,
-      [created, updated, skipped, summary.error_rows, summary.warning_rows, JSON.stringify(finalSummary), batchId],
-    );
+    const finalSummary = { ...summary, created: newDocs.length, updated: updates.length, masters_created: summary.masters_to_create };
+    await col.batches().updateOne({ _id: batchId }, {
+      $set: {
+        status: 'committed', created_count: newDocs.length, updated_count: updates.length, skipped_count: skipped,
+        error_count: summary.error_rows, warning_count: summary.warning_rows, summary: finalSummary,
+      },
+    });
+    await col.importUploads().deleteOne({ _id: uploadId });
     return { batch_id: batchId, ...finalSummary };
-  });
-
-  for (const ext of ['txt', 'json']) {
-    try { unlinkSync(uploadPath(uploadId, ext)); } catch { /* ignore */ }
+  } catch (err) {
+    // Undo a partial import so the batch can simply be retried.
+    const created = await col.requests().find({ import_batch_id: batchId }, { projection: { _id: 1 } }).toArray();
+    const createdIds = created.map((c) => c._id);
+    await Promise.all([
+      col.requests().deleteMany({ import_batch_id: batchId }),
+      col.attachments().deleteMany({ request_id: { $in: createdIds }, source: 'fms_import' }),
+      col.legacyRows().deleteMany({ batch_id: batchId }),
+      col.events().deleteMany({ request_id: { $in: createdIds } }),
+      col.issues().deleteMany({ batch_id: batchId }),
+    ]);
+    await col.batches().updateOne({ _id: batchId }, { $set: { status: 'failed', error: String((err as Error)?.message ?? err) } });
+    throw err;
   }
-  return result;
 }
 
-export function listBatches() {
-  return all(`SELECT b.id, b.file_name, b.file_size, b.export_at, b.mode, b.total_rows, b.created_count, b.updated_count, b.skipped_count,
-      b.error_count, b.warning_count, b.status, b.created_at, b.rolled_back_at, u.name AS created_by_name
-    FROM import_batches b LEFT JOIN users u ON u.id = b.created_by ORDER BY b.id DESC`);
+export async function listBatches() {
+  const [batches, users] = await Promise.all([
+    col.batches().find({ status: { $ne: 'failed' } }, { projection: { mapping: 0, columns: 0, options: 0, summary: 0 } }).sort({ _id: -1 }).toArray(),
+    col.users().find({}, { projection: { name: 1 } }).toArray(),
+  ]);
+  const names = new Map(users.map((u) => [u._id, u.name]));
+  return batches.map((b) => ({ ...withId(b), created_by_name: names.get(b.created_by) ?? null }));
 }
 
-export function getBatch(id: number, query: Record<string, any>) {
-  const b = get('SELECT b.*, u.name AS created_by_name FROM import_batches b LEFT JOIN users u ON u.id = b.created_by WHERE b.id = ?', [id]);
+export async function getBatch(id: number, query: Record<string, any>) {
+  const b = await col.batches().findOne({ _id: id });
   if (!b) throw notFound('Import batch');
   const severity = query.severity === 'error' || query.severity === 'warning' ? query.severity : null;
   const page = Math.max(1, int(query.page) ?? 1);
   const size = 200;
-  const where = severity ? 'batch_id = ? AND severity = ?' : 'batch_id = ?';
-  const params = severity ? [id, severity] : [id];
-  const issues = all(`SELECT row_no, severity, field, message, value FROM import_issues WHERE ${where} ORDER BY row_no, id LIMIT ${size} OFFSET ${(page - 1) * size}`, params);
-  const issueTotal = get<{ n: number }>(`SELECT COUNT(*) AS n FROM import_issues WHERE ${where}`, params)!.n;
-  const statusCounts = all('SELECT status, COUNT(*) AS n FROM requests WHERE import_batch_id = ? GROUP BY status', [id]);
-  const modified = get<{ n: number }>('SELECT COUNT(*) AS n FROM requests WHERE import_batch_id = ? AND modified_in_app = 1', [id])!.n;
+  const filter = severity ? { batch_id: id, severity } : { batch_id: id };
+  const [issues, issueTotal, statusRows, modified, creator] = await Promise.all([
+    col.issues().find(filter, { projection: { _id: 0, batch_id: 0 } }).sort({ row_no: 1, _id: 1 }).skip((page - 1) * size).limit(size).toArray(),
+    col.issues().countDocuments(filter),
+    col.requests().aggregate([{ $match: { import_batch_id: id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]).toArray(),
+    col.requests().countDocuments({ import_batch_id: id, modified_in_app: true }),
+    col.users().findOne({ _id: b.created_by }, { projection: { name: 1 } }),
+  ]);
+  const { mapping: _m, columns: _c, ...rest } = b;
   return {
-    batch: { ...b, options: JSON.parse(b.options ?? '{}'), summary: JSON.parse(b.summary ?? '{}'), mapping: undefined, columns: undefined },
+    batch: { ...withId(rest), created_by_name: creator?.name ?? null },
     issues, issue_total: issueTotal, page, page_size: size,
-    status_counts: statusCounts, modified_records: modified,
+    status_counts: statusRows.map((s) => ({ status: s._id, n: s.n })), modified_records: modified,
     can_rollback: b.status === 'committed' && !b.updated_count && modified === 0,
   };
 }
 
-export function rollbackBatch(id: number, user: AuthUser) {
-  const b = get('SELECT * FROM import_batches WHERE id = ?', [id]);
+export async function rollbackBatch(id: number, user: AuthUser) {
+  const b = await col.batches().findOne({ _id: id });
   if (!b) throw notFound('Import batch');
   if (b.status !== 'committed') throw conflict('Batch is already rolled back');
   if (b.updated_count) throw conflict('This batch refreshed existing records and cannot be rolled back');
-  const modified = get<{ n: number }>('SELECT COUNT(*) AS n FROM requests WHERE import_batch_id = ? AND modified_in_app = 1', [id])!.n;
+  const modified = await col.requests().countDocuments({ import_batch_id: id, modified_in_app: true });
   if (modified) throw conflict(`${modified} record(s) from this batch have been worked on in the app; rollback is not allowed`);
-  return tx(() => {
-    const { changes } = run('DELETE FROM requests WHERE import_batch_id = ?', [id]);
-    run('UPDATE import_batches SET status = ?, rolled_back_at = ? WHERE id = ?', ['rolled_back', nowLocal(), id]);
-    return { removed: changes, by: user.name };
-  });
+  const ids = (await col.requests().find({ import_batch_id: id }, { projection: { _id: 1 } }).toArray()).map((r) => r._id);
+  const { deletedCount } = await col.requests().deleteMany({ import_batch_id: id });
+  await Promise.all([
+    col.attachments().deleteMany({ request_id: { $in: ids } }),
+    col.legacyRows().deleteMany({ request_id: { $in: ids } }),
+    col.events().deleteMany({ request_id: { $in: ids } }),
+  ]);
+  await col.batches().updateOne({ _id: id }, { $set: { status: 'rolled_back', rolled_back_at: nowLocal() } });
+  return { removed: deletedCount, by: user.name };
 }

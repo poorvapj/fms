@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Environment: "local" (testing on this computer) or "live" (real data). Each has its own database,
- * uploads and session secret under data/<env>/, and its own default ports, so testing never touches live data.
+ * Environment: "local" (testing on this computer) or "live" (real data). Each has its own MongoDB database
+ * (MONGODB_URI / MONGODB_DB, loaded from backend/.env.<env>) and its own default ports, so testing never touches live data.
+ * data/<env>/ only holds the generated session secret when JWT_SECRET is not set.
  */
 export type AppEnv = 'local' | 'live';
 const envName = (process.env.FMS_ENV ?? 'local').toLowerCase();
@@ -15,8 +16,7 @@ export const APP_ENV: AppEnv = envName === 'live' || envName === 'production' ? 
 const DEFAULT_PORTS = { local: { api: 4600, ui: 5600 }, live: { api: 4700, ui: 5700 } }[APP_ENV];
 
 const dataDir = path.resolve(process.env.FMS_DATA_DIR ?? path.join(serverRoot, 'data', APP_ENV));
-mkdirSync(path.join(dataDir, 'uploads'), { recursive: true });
-mkdirSync(path.join(dataDir, 'imports'), { recursive: true });
+mkdirSync(dataDir, { recursive: true });
 
 // Persist a generated secret so sessions survive restarts when JWT_SECRET is not provided.
 function loadSecret(): string {
@@ -36,9 +36,9 @@ export const config = {
   cookieSameSite: (process.env.COOKIE_SAMESITE ?? 'strict') as 'strict' | 'lax' | 'none',
   serverRoot,
   dataDir,
-  dbFile: process.env.FMS_DB_FILE ?? path.join(dataDir, 'fms.db'),
-  uploadsDir: path.join(dataDir, 'uploads'),
-  importsDir: path.join(dataDir, 'imports'),
+  /** MongoDB connection (Atlas). Each environment points at its own cluster/database. */
+  mongoUri: process.env.MONGODB_URI ?? '',
+  mongoDb: process.env.MONGODB_DB ?? (APP_ENV === 'live' ? 'fms_live' : 'fms_local'),
   /** Where the separately hosted frontend runs (used only for messages and CORS defaults). */
   frontendUrl: process.env.FRONTEND_URL ?? `http://localhost:${DEFAULT_PORTS.ui}`,
   jwtSecret: loadSecret(),

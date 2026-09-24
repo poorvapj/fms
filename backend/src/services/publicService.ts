@@ -1,13 +1,20 @@
-import { all, get } from '../db/db.ts';
+import { col } from '../db/mongo.ts';
 import { REQUEST_STATUSES, WORK_TYPES } from '../domain/workflow.ts';
 import { HttpError, notFound } from '../utils/http.ts';
 import { createRequest, type UploadedImage } from './requests.ts';
 import { stageName } from './stageDefs.ts';
 
-export function publicFormOptions() {
+const CI = { locale: 'en', strength: 2 } as const;
+
+export async function publicFormOptions() {
+  const opts = { projection: { name: 1 }, collation: CI };
+  const [properties, categories] = await Promise.all([
+    col.properties().find({ active: 1 }, opts).sort({ sort_order: 1, name: 1 }).toArray(),
+    col.categories().find({ active: 1 }, opts).sort({ sort_order: 1, name: 1 }).toArray(),
+  ]);
   return {
-    properties: all('SELECT id, name FROM properties WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE'),
-    categories: all('SELECT id, name FROM work_categories WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE'),
+    properties: properties.map((p) => ({ id: p._id, name: p.name })),
+    categories: categories.map((c) => ({ id: c._id, name: c.name })),
     work_types: WORK_TYPES,
   };
 }
@@ -24,32 +31,28 @@ function throttle(ip: string) {
   hits.set(ip, list);
 }
 
-export function submitPublicRequest(body: any, images: UploadedImage[], ip: string) {
+export async function submitPublicRequest(body: any, images: UploadedImage[], ip: string) {
   // Honeypot: real users never see or fill the "website" field.
   if (body.website) throw new HttpError(400, 'Submission rejected');
   throttle(ip);
-  const r = createRequest(body, null, images, { source: 'public', ip });
+  const r = await createRequest(body, null, images, { source: 'public', ip });
   return { request_no: r.request_no, tracking_token: r.tracking_token };
 }
 
-export function trackPublicRequest(token: string) {
+export async function trackPublicRequest(token: string) {
   if (!/^[A-Za-z0-9_-]{20,40}$/.test(token)) throw notFound('Job card');
-  const r = get(
-    `SELECT r.id, r.request_no, r.title, r.description, r.status, r.requested_at, r.target_date, r.current_stage_key,
-            r.closure_category, r.closed_at, r.cancel_reason, p.name AS property_name, c.name AS category_name
-     FROM requests r JOIN properties p ON p.id = r.property_id JOIN work_categories c ON c.id = r.category_id
-     WHERE r.public_token = ?`,
-    [token],
-  );
+  const r = await col.requests().findOne({ public_token: token });
   if (!r) throw notFound('Job card');
-  const stages = all(`SELECT stage_key, status, actual_at FROM request_stages WHERE request_id = ? AND status <> 'skipped' ORDER BY seq`, [r.id])
-    .map((s) => ({ name: stageName(s.stage_key), status: s.status, actual_at: s.actual_at }));
+  const [property, category] = await Promise.all([
+    col.properties().findOne({ _id: r.property_id }, { projection: { name: 1 } }),
+    col.categories().findOne({ _id: r.category_id }, { projection: { name: 1 } }),
+  ]);
   return {
     request_no: r.request_no,
     title: r.title,
     description: r.description,
-    property: r.property_name,
-    category: r.category_name,
+    property: property?.name ?? '—',
+    category: category?.name ?? '—',
     requested_at: r.requested_at,
     target_date: r.target_date,
     status: r.status,
@@ -58,6 +61,8 @@ export function trackPublicRequest(token: string) {
     closure_category: r.closure_category,
     closed_at: r.closed_at,
     rejection_reason: r.status === 'cancelled' ? r.cancel_reason : null,
-    stages,
+    stages: (r.stages as { stage_key: string; status: string; actual_at: string | null }[])
+      .filter((s) => s.status !== 'skipped')
+      .map((s) => ({ name: stageName(s.stage_key), status: s.status, actual_at: s.actual_at })),
   };
 }

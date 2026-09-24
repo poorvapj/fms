@@ -7,7 +7,7 @@ It is two **separate projects**. Each has its own `package.json`, dependencies, 
 
 ```
 fms-operations/
-├── backend/    API only: Node 26 + Express 5 + SQLite (built-in node:sqlite)   → http://localhost:4600/api
+├── backend/    API only: Node 26 + Express 5 + MongoDB (Atlas)                 → http://localhost:4600/api
 ├── frontend/   Web UI:  React 19 + Vite + TypeScript                           → http://localhost:5600
 └── docs/DESIGN.md   Data model, import mapping, workflow, roles, screens, API
 ```
@@ -16,20 +16,36 @@ The frontend calls the backend over HTTP (`/api`). The two share no code. You ca
 
 ## Requirements
 
-Node.js **22.18 or later** (developed on 26). No database server or native builds are needed.
+- Node.js **22.18 or later** (developed on 26).
+- A **MongoDB Atlas** cluster for each environment. The free tier is enough.
+
+Everything is stored in MongoDB: job cards with their stage history, users, masters, activity, import batches, and the **photos** (in GridFS). Nothing is kept on the server's disk, so it runs on hosts without persistent storage, such as Render's free plan.
 
 ## Two databases: Local (testing) and Live (real data)
 
 | | Local – for testing | Live – real data |
 |---|---|---|
-| Database | `backend/data/local/fms.db` | `backend/data/live/fms.db` |
+| Database settings | `backend/.env.local` (`MONGODB_URI`, `MONGODB_DB=fms_local`) | `backend/.env.live` (`MONGODB_URI`, `MONGODB_DB=fms_live`) |
 | Backend | `npm start` → http://localhost:4600 | `npm run start:live` → http://localhost:4700 |
 | Frontend | `npm run dev` → **http://localhost:5600** | `npm run dev:live` → **http://localhost:5700** |
 | Badge in the app | yellow **LOCAL – test data** | none |
 
-Each has its own job cards, photos, users and login secret, so nothing you do in Local reaches Live. You can run both at the same time.
+- Use a separate Atlas cluster for Local, or at least a separate database name, so nothing you do in Local reaches Live. You can run both at the same time.
+- The `.env.local` / `.env.live` files hold the database passwords. They are git-ignored; copy `backend/.env.example` to create them.
+- **Atlas setup:** under **Network Access**, allow your IP. For Render, allow `0.0.0.0/0`, because Render's free plan has no fixed IP.
+- To refresh Local with a copy of Live, run `npm run copy-live-to-local` in `backend`. It reads both `.env` files. Live is only read, never changed.
 
-To refresh Local with a fresh copy of Live, stop the local backend and run `npm run copy-live-to-local` in `backend`. Live is only read, never changed.
+### Moving the old SQLite data into MongoDB (one time)
+
+Earlier versions stored data in `backend/data/<env>/fms.db`. To move it into MongoDB, including photos:
+
+```powershell
+cd "C:\Users\my\service desk\fms-operations\backend"
+npm run migrate:sqlite:live     # data/live/fms.db  → Live cluster  (uses .env.live)
+npm run migrate:sqlite          # data/local/fms.db → Local cluster (uses .env.local)
+```
+
+The SQLite files are only read, so keep them as a backup. The migration refuses to overwrite a MongoDB database that already has data unless you add `-- --force`.
 
 ## Run
 
@@ -61,8 +77,9 @@ cd "C:\Users\my\service desk\fms-operations\frontend"; npm run dev:live     # op
 | `npm run import:cli -- "C:\path\file.tsv"` | Dry run in Local (use `import:cli:live` for Live) |
 | `npm run import:cli -- "C:\path\file.tsv" --commit` | Import it (rows already imported are skipped) |
 | `npm run copy-live-to-local` | Replace Local test data with a copy of Live |
+| `npm run migrate:sqlite` / `npm run migrate:sqlite:live` | One-time move of old SQLite data into MongoDB |
 
-To back up the real data, copy `backend/data/live/`.
+To back up the real data, use Atlas backups (cluster → **Backup**) or `mongodump` with the Live connection string.
 
 ## Frontend commands (`frontend/`)
 
@@ -93,7 +110,9 @@ If both are served under one domain through a reverse proxy (for example `/` →
 | `PORT` | `4600` | API port |
 | `FRONTEND_URL` | `http://localhost:5600` | Where the UI runs |
 | `FMS_ENV` | `local` | `local` or `live` (set by the npm scripts) |
-| `FMS_DATA_DIR` | `backend/data/<env>` | Database, uploads and import staging |
+| `MONGODB_URI` | — (required) | Atlas connection string for this environment |
+| `MONGODB_DB` | `fms_local` / `fms_live` | Database name |
+| `FMS_DATA_DIR` | `backend/data/<env>` | Only holds the generated session secret when `JWT_SECRET` is not set |
 | `JWT_SECRET` | generated & stored in the data dir | Session signing key |
 | `ADMIN_PASSWORD` | `Admin@12345` | Initial admin password (first start only) |
 | `SESSION_HOURS` | `12` | Session length |

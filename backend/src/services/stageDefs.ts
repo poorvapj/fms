@@ -1,42 +1,55 @@
-import { all, run } from '../db/db.ts';
+import { col } from '../db/mongo.ts';
 import type { Role } from '../domain/permissions.ts';
 import { DEFAULT_STAGES, describeSla, type SlaRule, type StageDefinition, type StageKey } from '../domain/workflow.ts';
 import { badRequest, notFound } from '../utils/http.ts';
 
-let cache: StageDefinition[] | null = null;
+let cache: StageDefinition[] = DEFAULT_STAGES;
 
-/** Stage definitions with admin-editable fields (name, roles, SLA, evidence) taken from the database. */
-export function stageDefs(): StageDefinition[] {
-  if (cache) return cache;
-  const rows = new Map(all('SELECT * FROM workflow_stages').map((r) => [r.key, r]));
+/** Ensure every stage exists in the database (keeps admin edits) and load the cache. Call at startup. */
+export async function loadStageDefs() {
+  for (const s of DEFAULT_STAGES) {
+    await col.workflowStages().updateOne(
+      { _id: s.key },
+      {
+        $setOnInsert: { name: s.name, action_roles: s.roles, responsible_label: s.responsibleLabel, sla_rule: s.sla, requires_evidence: s.requiresEvidence },
+        $set: { seq: s.seq, stage_group: s.group, optional: s.optional, decision: s.decision, legacy_name: s.legacyName ?? null },
+      },
+      { upsert: true },
+    );
+  }
+  const rows = new Map((await col.workflowStages().find().toArray()).map((r) => [r._id, r]));
   cache = DEFAULT_STAGES.map((d) => {
     const r = rows.get(d.key);
     if (!r) return d;
     return {
       ...d,
-      name: r.name,
-      roles: JSON.parse(r.action_roles) as Role[],
+      name: r.name ?? d.name,
+      roles: (r.action_roles as Role[]) ?? d.roles,
       responsibleLabel: r.responsible_label ?? d.responsibleLabel,
-      sla: JSON.parse(r.sla_rule) as SlaRule,
+      sla: (r.sla_rule as SlaRule) ?? d.sla,
       requiresEvidence: !!r.requires_evidence,
     };
   });
+}
+
+/** Stage definitions with admin-editable fields (name, roles, SLA, evidence). */
+export function stageDefs(): StageDefinition[] {
   return cache;
 }
 
 export function stageDef(key: string): StageDefinition {
-  const d = stageDefs().find((s) => s.key === key);
+  const d = cache.find((s) => s.key === key);
   if (!d) throw notFound('Stage');
   return d;
 }
 
 export function stageName(key: string | null | undefined): string | null {
   if (!key) return null;
-  return stageDefs().find((s) => s.key === key)?.name ?? key;
+  return cache.find((s) => s.key === key)?.name ?? key;
 }
 
 export function publicStageDefs() {
-  return stageDefs().map((s) => ({
+  return cache.map((s) => ({
     key: s.key,
     seq: s.seq,
     name: s.name,
@@ -54,17 +67,16 @@ export function publicStageDefs() {
 
 const RULE_TYPES = ['none', 'add_hours', 'next_day_at', 'same_day_at', 'add_working_days'];
 
-export function updateStageDef(key: StageKey, body: any) {
+export async function updateStageDef(key: StageKey, body: any) {
   stageDef(key);
-  const sets: string[] = [];
-  const params: any[] = [];
+  const set: Record<string, unknown> = {};
   if (body.name !== undefined) {
     const name = String(body.name).trim();
     if (!name) throw badRequest('Name is required');
-    sets.push('name = ?'); params.push(name.slice(0, 80));
+    set.name = name.slice(0, 80);
   }
-  if (body.responsible_label !== undefined) { sets.push('responsible_label = ?'); params.push(String(body.responsible_label).slice(0, 80)); }
-  if (body.requires_evidence !== undefined) { sets.push('requires_evidence = ?'); params.push(body.requires_evidence ? 1 : 0); }
+  if (body.responsible_label !== undefined) set.responsible_label = String(body.responsible_label).slice(0, 80);
+  if (body.requires_evidence !== undefined) set.requires_evidence = !!body.requires_evidence;
   if (body.sla !== undefined) {
     const r = body.sla;
     if (!r || !RULE_TYPES.includes(r.type)) throw badRequest('Invalid SLA rule type');
@@ -87,10 +99,9 @@ export function updateStageDef(key: StageKey, body: any) {
         if (!time) throw badRequest('Time must be HH:MM');
         rule = { type: r.type, time, anchor };
     }
-    sets.push('sla_rule = ?'); params.push(JSON.stringify(rule));
+    set.sla_rule = rule;
   }
-  if (!sets.length) return;
-  params.push(key);
-  run(`UPDATE workflow_stages SET ${sets.join(', ')} WHERE key = ?`, params);
-  cache = null;
+  if (!Object.keys(set).length) return;
+  await col.workflowStages().updateOne({ _id: key }, { $set: set });
+  await loadStageDefs();
 }

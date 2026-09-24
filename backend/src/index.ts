@@ -2,12 +2,13 @@ import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { config } from './config.ts';
-import './db/db.ts';
+import { connect } from './db/mongo.ts';
 import { ensureBaseData } from './db/seed.ts';
 import { api } from './routes/api.ts';
 import { HttpError } from './utils/http.ts';
 
-ensureBaseData();
+await connect();
+await ensureBaseData();
 
 const app = express();
 app.disable('x-powered-by');
@@ -60,5 +61,5 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 app.listen(config.port, () => {
   console.log(`FMS Operations API [${config.env.toUpperCase()}] listening on http://localhost:${config.port}  (frontend: ${config.frontendUrl})`);
-  console.log(`Database: ${config.dbFile}`);
+  console.log(`MongoDB database: ${config.mongoDb}`);
 });

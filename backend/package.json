@@ -16,13 +16,16 @@
     "import:cli:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/import/cli.ts",
     "copy-live-to-local": "node --disable-warning=ExperimentalWarning src/tools/copyLiveToLocal.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning --test test/e2e.test.ts"
+    "test": "node --disable-warning=ExperimentalWarning --test test/e2e.test.ts",
+    "migrate:sqlite": "node --disable-warning=ExperimentalWarning src/env.ts local src/tools/migrateFromSqlite.ts",
+    "migrate:sqlite:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/tools/migrateFromSqlite.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.21.0",
     "multer": "^2.0.2"
   },
   "devDependencies": {
@@ -31,6 +34,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.0",
+    "mongodb-memory-server": "^10.4.3",
     "typescript": "^5.9.2"
   }
 }

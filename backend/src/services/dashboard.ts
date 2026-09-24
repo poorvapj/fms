@@ -1,59 +1,73 @@
+import type { Filter } from 'mongodb';
 import type { AuthUser } from '../auth/auth.ts';
-import { all, get } from '../db/db.ts';
+import { col, type Doc } from '../db/mongo.ts';
 import type { Role } from '../domain/permissions.ts';
 import type { StageKey } from '../domain/workflow.ts';
 import { diffMinutes, formatMs, nowLocal, todayLocal, toMs } from '../utils/dates.ts';
-import { buildFilter, decorate, LIST_SELECT, OVERDUE_SQL, scopeSql } from './requests.ts';
+import { buildFilter, findRows, isOverdue, LIVE_STATUSES, scopeFilter } from './requests.ts';
+import { masterNames } from './masters.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 
-const ACTIVE = `r.status IN ('open','in_progress','pending_action','pending_approval','completed')`;
-/** Open = everything not closed or cancelled (on-hold jobs are still open). */
-const OPEN = `r.status NOT IN ('closed','cancelled')`;
-/** Due later today and not yet overdue (overdue jobs are counted under Overdue). */
-const DUE_TODAY = `(${ACTIVE} AND substr(r.current_stage_planned_at, 1, 10) = :today AND r.current_stage_planned_at >= :now)`;
-const WAITING_MATERIAL = `(${ACTIVE} AND r.current_stage_key = 'material')`;
-const WAITING_APPROVAL = `(${ACTIVE} AND r.current_stage_key IN ('triage','ph_discussion','permission'))`;
-const VERIFICATION = `(${ACTIVE} AND r.current_stage_key IN ('verification','closed'))`;
-const REOPENED = `EXISTS (SELECT 1 FROM request_events ev WHERE ev.request_id = r.id AND ev.type = 'reopen' AND ev.message LIKE 'Reopened%')`;
+const WAITING_APPROVAL: StageKey[] = ['triage', 'ph_discussion', 'permission'];
+const VERIFICATION: StageKey[] = ['verification', 'closed'];
 
-const HEALTH_DIMENSIONS: Record<string, { join: string; id: string; name: string }> = {
-  property: { join: 'JOIN properties p ON p.id = r.property_id', id: 'p.id', name: 'p.name' },
-  category: { join: 'JOIN work_categories c ON c.id = r.category_id', id: 'c.id', name: 'c.name' },
-  engineer: { join: 'LEFT JOIN engineers e ON e.id = COALESCE(r.assigned_engineer_id, r.site_engineer_id)', id: 'e.id', name: 'e.name' },
-};
+/** Job cards reopened for rework after being closed/completed. */
+async function reopenedIds(): Promise<Set<number>> {
+  const ids = await col.events().distinct('request_id', { type: 'reopen', message: { $regex: '^Reopened' } });
+  return new Set(ids as number[]);
+}
 
-export function dashboard(query: Record<string, any>, user: AuthUser) {
-  const { where, params } = buildFilter(query, user);
-  const p = { ...params, today: todayLocal(), since30: formatMs(toMs(nowLocal())! - 30 * 86400000) };
-  const kpi = get(
-    `SELECT COUNT(*) AS total,
-       SUM(${OPEN}) AS open_jobs,
-       SUM(${DUE_TODAY}) AS due_today,
-       SUM(${OVERDUE_SQL}) AS overdue,
-       SUM(${WAITING_MATERIAL}) AS waiting_material,
-       SUM(${WAITING_APPROVAL}) AS waiting_approval,
-       SUM(r.status = 'in_progress') AS in_progress,
-       SUM(${VERIFICATION}) AS verification_pending,
-       SUM(r.status = 'closed' AND r.closed_at >= :since30) AS closed_30d,
-       SUM(r.status = 'closed') AS closed,
-       SUM(r.status = 'on_hold') AS on_hold,
-       SUM(${REOPENED}) AS reopened
-     FROM requests r WHERE ${where}`,
-    p,
-  )!;
-  for (const k of Object.keys(kpi)) kpi[k] = Number(kpi[k] ?? 0);
+export async function dashboard(query: Record<string, any>, user: AuthUser) {
+  const { filter, now } = buildFilter(query, user);
+  const today = todayLocal();
+  const since30 = formatMs(toMs(now)! - 30 * 86400000);
+  const [rows, reopened, names] = await Promise.all([
+    col.requests().find(filter, { projection: { status: 1, current_stage_key: 1, current_stage_planned_at: 1, closed_at: 1, property_id: 1, category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1 } }).toArray(),
+    reopenedIds(),
+    masterNames(),
+  ]);
+  const live = (r: Doc) => LIVE_STATUSES.includes(r.status);
+  const open = (r: Doc) => r.status !== 'closed' && r.status !== 'cancelled';
+  const dueToday = (r: Doc) => live(r) && r.current_stage_planned_at?.slice(0, 10) === today && r.current_stage_planned_at >= now;
+  const count = (fn: (r: Doc) => boolean) => rows.reduce((n, r) => n + (fn(r) ? 1 : 0), 0);
 
-  const dim = HEALTH_DIMENSIONS[query.group_by] ?? HEALTH_DIMENSIONS.property;
-  const health = all(
-    `SELECT ${dim.id} AS id, COALESCE(${dim.name}, 'Unassigned') AS name,
-       SUM(${OPEN}) AS open, SUM(${OVERDUE_SQL}) AS overdue, SUM(${DUE_TODAY}) AS due_today,
-       SUM(${WAITING_MATERIAL}) AS waiting_material, SUM(${WAITING_APPROVAL}) AS waiting_approval,
-       SUM(r.status = 'closed') AS closed, SUM(${REOPENED}) AS reopened, COUNT(*) AS total
-     FROM requests r ${dim.join} WHERE ${where} GROUP BY ${dim.id} ORDER BY open DESC, overdue DESC, name`,
-    p,
-  ).map((r) => ({ ...r, reopen_rate: r.closed ? Math.round((Number(r.reopened) / Number(r.closed)) * 1000) / 10 : 0 }));
+  const kpi = {
+    total: rows.length,
+    open_jobs: count(open),
+    due_today: count(dueToday),
+    overdue: count((r) => isOverdue(r, now)),
+    waiting_material: count((r) => live(r) && r.current_stage_key === 'material'),
+    waiting_approval: count((r) => live(r) && WAITING_APPROVAL.includes(r.current_stage_key)),
+    in_progress: count((r) => r.status === 'in_progress'),
+    verification_pending: count((r) => live(r) && VERIFICATION.includes(r.current_stage_key)),
+    closed_30d: count((r) => r.status === 'closed' && (r.closed_at ?? '') >= since30),
+    closed: count((r) => r.status === 'closed'),
+    on_hold: count((r) => r.status === 'on_hold'),
+    reopened: count((r) => reopened.has(r._id)),
+  };
 
-  return { kpi, health, group_by: query.group_by in HEALTH_DIMENSIONS ? query.group_by : 'property' };
+  const groupBy = ['property', 'category', 'engineer'].includes(query.group_by) ? query.group_by : 'property';
+  const keyOf = (r: Doc): number | null => (groupBy === 'property' ? r.property_id : groupBy === 'category' ? r.category_id : r.assigned_engineer_id ?? r.site_engineer_id ?? null);
+  const nameMap = groupBy === 'property' ? names.properties : groupBy === 'category' ? names.categories : names.engineers;
+  const groups = new Map<number | null, Doc[]>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const health = [...groups.entries()].map(([id, list]) => {
+    const c = (fn: (r: Doc) => boolean) => list.reduce((n, r) => n + (fn(r) ? 1 : 0), 0);
+    const closed = c((r) => r.status === 'closed');
+    const re = c((r) => reopened.has(r._id));
+    return {
+      id, name: id === null ? 'Unassigned' : nameMap.get(id) ?? `#${id}`,
+      open: c(open), overdue: c((r) => isOverdue(r, now)), due_today: c(dueToday),
+      waiting_material: c((r) => live(r) && r.current_stage_key === 'material'),
+      waiting_approval: c((r) => live(r) && WAITING_APPROVAL.includes(r.current_stage_key)),
+      closed, reopened: re, total: list.length, reopen_rate: closed ? Math.round((re / closed) * 1000) / 10 : 0,
+    };
+  }).sort((a, b) => b.open - a.open || b.overdue - a.overdue || a.name.localeCompare(b.name));
+
+  return { kpi, health, group_by: groupBy };
 }
 
 /** Stages each non-engineer role is primarily responsible for (their "My Jobs" queue). */
@@ -66,25 +80,22 @@ const ROLE_QUEUE: Partial<Record<Role, StageKey[]>> = {
 };
 
 /** My Jobs board: Overdue / Today / Blocked / Upcoming for the signed-in user. */
-export function myJobs(_query: Record<string, any>, user: AuthUser) {
+export async function myJobs(_query: Record<string, any>, user: AuthUser) {
   const now = nowLocal();
-  const params: Record<string, any> = { now, eng: user.engineer_id ?? -1 };
-  let actionable: string;
-  let involved: string;
+  const eng = user.engineer_id ?? -1;
+  let actionable: Filter<Doc>;
+  let involved: Filter<Doc>;
   if (user.role === 'engineer') {
-    actionable = `((r.current_stage_key = 'site_visit' AND r.site_engineer_id = :eng) OR (r.current_stage_key IN ('work_started','work_completed') AND r.assigned_engineer_id = :eng))`;
-    involved = `(r.assigned_engineer_id = :eng OR r.site_engineer_id = :eng)`;
+    actionable = { $or: [{ current_stage_key: 'site_visit', site_engineer_id: eng }, { current_stage_key: { $in: ['work_started', 'work_completed'] }, assigned_engineer_id: eng }] };
+    involved = { $or: [{ assigned_engineer_id: eng }, { site_engineer_id: eng }] };
   } else {
     const keys = ROLE_QUEUE[user.role] ?? [];
-    actionable = keys.length ? `r.current_stage_key IN (${keys.map((k) => `'${k}'`).join(',')})` : '0';
+    actionable = { current_stage_key: { $in: keys } };
     involved = actionable;
   }
-  const mine = all(`${LIST_SELECT} WHERE ${ACTIVE} AND ${actionable} ORDER BY r.current_stage_planned_at IS NULL, r.current_stage_planned_at LIMIT 500`, params)
-    .map((r) => decorate(r, now));
-  const blocked = all(
-    `${LIST_SELECT} WHERE (${involved}) AND NOT (${actionable}) AND (r.status IN ('on_hold','pending_approval')) ORDER BY r.requested_at DESC LIMIT 200`,
-    params,
-  ).map((r) => decorate(r, now));
+  const mine = await findRows({ $and: [{ status: { $in: LIVE_STATUSES } }, actionable] }, { current_stage_planned_at: 1 });
+  mine.sort((a, b) => (a.current_stage_planned_at === null ? 1 : 0) - (b.current_stage_planned_at === null ? 1 : 0));
+  const blocked = await findRows({ $and: [involved, { $nor: [actionable] }, { status: { $in: ['on_hold', 'pending_approval'] } }] }, { requested_at: -1 }, 200);
   const today = now.slice(0, 10);
   return {
     overdue: mine.filter((r) => r.is_overdue),
@@ -108,21 +119,18 @@ export interface QueueItem {
 }
 
 /**
- * Process Coordinator exception queue: every live job card that needs a coordinator decision or chasing,
+ * Process Coordinator exception queue: every open job card that needs a coordinator decision or chasing,
  * with what happened, why it was flagged, who owns it and what to do next.
  */
-export function coordinatorQueue(query: Record<string, any>, user: AuthUser) {
-  const scope = scopeSql(user);
+export async function coordinatorQueue(query: Record<string, any>, user: AuthUser) {
   const now = nowLocal();
-  const rows = all(
-    `SELECT r.id, r.request_no, r.status, r.current_stage_key, r.current_stage_planned_at, r.site_engineer_id, r.assigned_engineer_id,
-            r.hold_reason, r.held_at, e.name AS engineer_name, se.name AS site_engineer_name, p.name AS property_name,
-            (SELECT x.stage_key FROM request_stages x WHERE x.request_id = r.id AND x.status = 'rejected' LIMIT 1) AS rejected_stage
-     FROM requests r JOIN properties p ON p.id = r.property_id
-     LEFT JOIN engineers e ON e.id = r.assigned_engineer_id LEFT JOIN engineers se ON se.id = r.site_engineer_id
-     WHERE ${scope.sql} AND (${ACTIVE} OR r.status = 'on_hold')`,
-    scope.params,
-  );
+  const [rows, names] = await Promise.all([
+    col.requests().find(
+      { $and: [scopeFilter(user), { status: { $in: [...LIVE_STATUSES, 'on_hold'] } }] },
+      { projection: { request_no: 1, status: 1, current_stage_key: 1, current_stage_planned_at: 1, site_engineer_id: 1, assigned_engineer_id: 1, hold_reason: 1, held_at: 1, 'stages.stage_key': 1, 'stages.status': 1 } },
+    ).toArray(),
+    masterNames(),
+  ]);
   const defs = new Map(stageDefs().map((d) => [d.key, d]));
   const items: QueueItem[] = [];
   for (const r of rows) {
@@ -130,12 +138,15 @@ export function coordinatorQueue(query: Record<string, any>, user: AuthUser) {
     const late = r.current_stage_planned_at && r.current_stage_planned_at < now ? diffMinutes(now, r.current_stage_planned_at) : null;
     const sev = (l: number | null, base: QueueItem['severity'] = 'medium'): QueueItem['severity'] => (l && l > 48 * 60 ? 'high' : l && l > 0 ? (base === 'low' ? 'medium' : base) : base);
     const push = (kind: string, severity: QueueItem['severity'], title: string, what: string, why: string, owner: string, action: string) =>
-      items.push({ id: r.id, job_no: r.request_no, kind, severity, title: `${r.request_no} ${title}`, what, why, owner, late_minutes: late, action });
+      items.push({ id: r._id, job_no: r.request_no, kind, severity, title: `${r.request_no} ${title}`, what, why, owner, late_minutes: late, action });
+    const engineerName = names.engineers.get(r.assigned_engineer_id) ?? null;
+    const siteEngineerName = names.engineers.get(r.site_engineer_id) ?? null;
 
     if (r.status === 'on_hold') {
       const heldDays = r.held_at ? (diffMinutes(now, r.held_at) ?? 0) / 1440 : 0;
-      if (r.rejected_stage) {
-        push('rejected', 'high', `was rejected at ${stageName(r.rejected_stage)}`, `The ${stageName(r.rejected_stage)} decision was "rejected": ${r.hold_reason ?? ''}`,
+      const rejected = (r.stages as { stage_key: string; status: string }[]).find((s) => s.status === 'rejected')?.stage_key;
+      if (rejected) {
+        push('rejected', 'high', `was rejected at ${stageName(rejected)}`, `The ${stageName(rejected)} decision was "rejected": ${r.hold_reason ?? ''}`,
           'A rejected approval puts the job on hold until the coordinator resolves it.', 'Process Coordinator', 'Resolve the objection, then Resume — or Cancel the job card.');
       } else if (heldDays >= 3) {
         push('hold', heldDays >= 7 ? 'high' : 'medium', `on hold for ${Math.floor(heldDays)} days`, `Job was put on hold: ${r.hold_reason ?? 'no reason given'}`,
@@ -153,8 +164,8 @@ export function coordinatorQueue(query: Record<string, any>, user: AuthUser) {
           push('no_engineer', 'high', 'has no site engineer assigned', 'Job is at Site Visit but nobody is assigned to visit.',
             'Site engineer is empty while the job is waiting for a site visit.', 'Unassigned', 'Assign a site engineer now (Reassign).');
         } else if (late) {
-          push('overdue', sev(late), 'site visit is overdue', `Site visit was due ${stageName('site_visit')} by the SLA and is not done.`,
-            'Current stage is past its planned time.', r.site_engineer_name, `Chase ${r.site_engineer_name} to complete the site visit.`);
+          push('overdue', sev(late), 'site visit is overdue', 'Site visit is past its planned time and is not done.',
+            'Current stage is past its planned time.', siteEngineerName ?? 'Site engineer', `Chase ${siteEngineerName ?? 'the site engineer'} to complete the site visit.`);
         }
         break;
       case 'engineer_assigned':
@@ -171,11 +182,12 @@ export function coordinatorQueue(query: Record<string, any>, user: AuthUser) {
         break;
       default:
         if (late && stage) {
-          const owner = ['work_started', 'work_completed'].includes(r.current_stage_key) ? r.engineer_name ?? 'Unassigned' : stage.responsibleLabel;
-          const noEngineer = ['work_started', 'work_completed'].includes(r.current_stage_key) && !r.assigned_engineer_id;
+          const workStage = ['work_started', 'work_completed'].includes(r.current_stage_key);
+          const owner = workStage ? engineerName ?? 'Unassigned' : stage.responsibleLabel;
+          const noEngineer = workStage && !r.assigned_engineer_id;
           push(noEngineer ? 'no_engineer' : 'overdue', noEngineer ? 'high' : sev(late), noEngineer ? 'has no engineer assigned' : `is overdue at ${stage.name}`,
             noEngineer ? 'Job is at the work stage but no engineer is assigned.' : `${stage.name} is not done and is past its planned time.`,
-            `Planned ${r.current_stage_planned_at.replace('T', ' ').slice(0, 16)} — ${stage.name} is the current stage.`,
+            `Planned ${String(r.current_stage_planned_at).replace('T', ' ').slice(0, 16)} — ${stage.name} is the current stage.`,
             owner, noEngineer ? 'Assign an engineer now (Reassign).' : `Chase ${owner} to complete ${stage.name}.`);
         }
     }
