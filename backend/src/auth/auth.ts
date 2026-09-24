@@ -49,7 +49,12 @@ export function login(username: string, password: string, ip: string, res: Respo
   const key = `${username.toLowerCase()}|${ip}`;
   const f = failures.get(key);
   if (f && f.count >= 10 && f.until > Date.now()) throw new HttpError(429, 'Too many failed attempts. Try again later.');
-  const row = get('SELECT id, password_hash, active FROM users WHERE username = ?', [username]);
+  // Sign in with either the username or the email address (emails are unique across users).
+  const row = get(
+    `SELECT id, password_hash, active FROM users WHERE username = ? COLLATE NOCASE OR (email IS NOT NULL AND lower(email) = lower(?))
+     ORDER BY username = ? COLLATE NOCASE DESC LIMIT 1`,
+    [username, username, username],
+  );
   const ok = row && row.active && bcrypt.compareSync(password, row.password_hash);
   if (!ok) {
     failures.set(key, { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + 15 * 60000 });

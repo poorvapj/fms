@@ -37,7 +37,7 @@ export function Login() {
           <div className="public-brand" style={{ margin: 0 }}><span className="brand-mark"><Icon name="wrench" size={16} /></span>FMS Operations</div>
           {env === 'local' && <span className="env-badge login-env">LOCAL – test data</span>}
           <div className="muted">Sign in to manage job cards.</div>
-          <Field label="Username"><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" /></Field>
+          <Field label="Email or username"><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" /></Field>
           <Field label="Password"><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>
           <ErrorBox error={error} />
           <button className="btn primary" disabled={busy || !username || !password}>{busy ? 'Signing in…' : 'Sign in'}</button>

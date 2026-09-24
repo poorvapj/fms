@@ -19,6 +19,17 @@ function checkEngineerLink(engineerId: number | null, role: string, userId?: num
   if (other) throw conflict(`That engineer is already linked to login "${other.username}"`);
 }
 
+/** Emails double as login IDs, so they must be valid and unique. */
+function checkEmail(raw: unknown, userId?: number): string | null {
+  const email = str(raw, 200)?.toLowerCase() ?? null;
+  if (!email) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw badRequest('Enter a valid email address');
+  const other = get('SELECT username FROM users WHERE lower(email) = ? AND id <> ?', [email, userId ?? -1]);
+  if (other) throw conflict(`That email is already used by login "${other.username}"`);
+  if (get('SELECT 1 FROM users WHERE username = ? COLLATE NOCASE AND id <> ?', [email, userId ?? -1])) throw conflict('That email matches another username');
+  return email;
+}
+
 export function createUser(body: any) {
   const username = requiredStr(body.username, 'Username', 60).toLowerCase();
   if (!/^[a-z0-9._-]{3,60}$/.test(username)) throw badRequest('Username may contain letters, numbers, dot, dash and underscore (min 3)');
@@ -26,12 +37,13 @@ export function createUser(body: any) {
   const role = oneOf(body.role, ROLES, 'Role');
   const engineerId = int(body.engineer_id);
   checkEngineerLink(engineerId, role);
+  const email = checkEmail(body.email);
   const password = validatePassword(body.password);
   const now = nowLocal();
   const { lastInsertRowid } = run(
     `INSERT INTO users (username, name, email, phone, password_hash, role, engineer_id, active, must_change_password, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`,
-    [username, requiredStr(body.name, 'Name', 120), str(body.email, 200), str(body.phone, 40), hashPassword(password), role, engineerId, now, now],
+    [username, requiredStr(body.name, 'Name', 120), email, str(body.phone, 40), hashPassword(password), role, engineerId, now, now],
   );
   return { id: lastInsertRowid };
 }
@@ -50,7 +62,7 @@ export function updateUser(id: number, body: any, actor: AuthUser) {
   }
   run(
     `UPDATE users SET name = ?, email = ?, phone = ?, role = ?, engineer_id = ?, active = ?, updated_at = ? WHERE id = ?`,
-    [body.name === undefined ? u.name : requiredStr(body.name, 'Name', 120), body.email === undefined ? u.email : str(body.email, 200),
+    [body.name === undefined ? u.name : requiredStr(body.name, 'Name', 120), body.email === undefined ? u.email : checkEmail(body.email, id),
       body.phone === undefined ? u.phone : str(body.phone, 40), role, engineerId, active, nowLocal(), id],
   );
   if (body.password) {
