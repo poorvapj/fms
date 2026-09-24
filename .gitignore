@@ -9,3 +9,4 @@ frontend/dist-live/
 .env.*
 !.env.example
 !frontend/.env.render
+*.tsbuildinfo
