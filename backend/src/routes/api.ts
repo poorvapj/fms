@@ -18,6 +18,7 @@ import {
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
 import { toCsv, badRequest, notFound } from '../utils/http.ts';
+import { config } from '../config.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
 
 export const api = Router();
@@ -41,6 +42,7 @@ function cleanupOnError<T>(req: Request, fn: () => T): T {
 
 // ---------------------------------------------------------------- public (no login)
 api.get('/public/form-options', (_req, res) => res.json(publicFormOptions()));
+api.get('/public/env', (_req, res) => res.json({ env: config.env }));
 api.post('/public/requests', evidenceUpload.array('images', 10), (req, res) => {
   res.status(201).json(cleanupOnError(req, () => submitPublicRequest(req.body ?? {}, files(req), clientIp(req))));
 });
@@ -67,6 +69,7 @@ api.post('/auth/change-password', (req, res) => {
 // ---------------------------------------------------------------- reference data
 api.get('/meta', (_req, res) => {
   res.json({
+    env: config.env,
     statuses: REQUEST_STATUSES,
     priorities: PRIORITIES,
     work_types: WORK_TYPES,

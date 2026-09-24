@@ -64,6 +64,7 @@ export function Layout() {
       <div className="main">
         <header className="topbar">
           <button className="btn ghost icon menu-btn" onClick={() => setOpen(true)} aria-label="Open menu"><Icon name="menu" /></button>
+          {meta?.env === 'local' && <span className="env-badge" title="You are using the LOCAL test database. Changes here do not affect live data.">LOCAL – test data</span>}
           <span className="grow" />
           <a className="btn sm" href="/submit" target="_blank" rel="noreferrer"><Icon name="externalLink" size={14} />Public form</a>
           {can('request.create') && <button className="btn sm primary" onClick={() => nav('/job-cards?new=1')}><Icon name="plus" size={14} />New Job Card</button>}

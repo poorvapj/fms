@@ -34,6 +34,7 @@ export interface StageDef {
 }
 
 export interface Meta {
+  env: 'local' | 'live';
   statuses: { key: string; label: string }[];
   priorities: string[];
   work_types: { key: string; label: string }[];

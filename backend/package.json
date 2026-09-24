@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch --disable-warning=ExperimentalWarning src/index.ts",
-    "start": "node --disable-warning=ExperimentalWarning src/index.ts",
-    "seed": "node --disable-warning=ExperimentalWarning src/db/seed.ts",
-    "import:cli": "node --disable-warning=ExperimentalWarning src/import/cli.ts",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/env.ts local src/index.ts",
+    "start": "node --disable-warning=ExperimentalWarning src/env.ts local src/index.ts",
+    "start:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/index.ts",
+    "seed": "node --disable-warning=ExperimentalWarning src/env.ts local src/db/seed.ts",
+    "seed:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/db/seed.ts",
+    "import:cli": "node --disable-warning=ExperimentalWarning src/env.ts local src/import/cli.ts",
+    "import:cli:live": "node --disable-warning=ExperimentalWarning src/env.ts live src/import/cli.ts",
+    "copy-live-to-local": "node --disable-warning=ExperimentalWarning src/tools/copyLiveToLocal.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --test test/e2e.test.ts"
   },

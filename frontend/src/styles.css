@@ -400,3 +400,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 /* required-question errors */
 .field.invalid .input, .field.invalid .select, .field.invalid .upload-add { border-color: var(--bad); }
 .field-error { display: flex; align-items: center; gap: 6px; color: var(--bad); font-size: 12.5px; }
+
+/* environment indicator (local test database) */
+.env-badge { background: #fef0c7; color: #93370d; border: 1px solid #fedf89; border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.login-env { align-self: center; }

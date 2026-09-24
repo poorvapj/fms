@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { ErrorBox, Field } from '../components/ui';
-import { errorText } from '../lib/api';
+import { api, errorText } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 export function Login() {
@@ -13,6 +13,8 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [env, setEnv] = useState<string | null>(null);
+  useEffect(() => { api.get<{ env: string }>('/public/env').then((r) => setEnv(r.env)).catch(() => undefined); }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,6 +35,7 @@ export function Login() {
       <form className="card login-card" onSubmit={submit}>
         <div className="card-body stack">
           <div className="public-brand" style={{ margin: 0 }}><span className="brand-mark"><Icon name="wrench" size={16} /></span>FMS Operations</div>
+          {env === 'local' && <span className="env-badge login-env">LOCAL – test data</span>}
           <div className="muted">Sign in to manage job cards.</div>
           <Field label="Username"><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" /></Field>
           <Field label="Password"><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>

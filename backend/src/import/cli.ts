@@ -1,7 +1,8 @@
-// Usage: npm run import:cli -- "<file.tsv>" [--commit] [--update] [--no-infer]
+// Usage: npm run import:cli -- "<file.tsv>" [--commit] [--update] [--no-infer]   (import:cli:live for the live database)
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { AuthUser } from '../auth/auth.ts';
+import { config } from '../config.ts';
 import { get } from '../db/db.ts';
 import { ensureBaseData } from '../db/seed.ts';
 import { commitImport, preview, saveUpload, validateImport } from './importService.ts';
@@ -13,6 +14,7 @@ if (!file) {
   process.exit(1);
 }
 ensureBaseData();
+console.log(`Environment: ${config.env.toUpperCase()}  (database ${config.dbFile})`);
 const admin = get(`SELECT id, username, name, role, engineer_id FROM users WHERE role = 'admin' AND active = 1 ORDER BY id LIMIT 1`)!;
 const user: AuthUser = { ...admin, must_change_password: false } as AuthUser;
 

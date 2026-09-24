@@ -1,9 +1,17 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-  plugins: [react()],
-  // Development and preview both forward /api to the separate backend (override with VITE_API_PROXY).
-  server: { port: 5600, strictPort: true, proxy: { '/api': process.env.VITE_API_PROXY ?? 'http://localhost:4600' } },
-  preview: { port: 5600, strictPort: true, proxy: { '/api': process.env.VITE_API_PROXY ?? 'http://localhost:4600' } },
+// Two environments, each talking to its own backend (and so its own database):
+//   local (default): UI 5600 → API 4600      live (`--mode live`): UI 5700 → API 4700
+// VITE_API_PROXY overrides the backend address.
+export default defineConfig(({ mode }) => {
+  const live = mode === 'live';
+  const port = live ? 5700 : 5600;
+  const proxy = { '/api': process.env.VITE_API_PROXY ?? `http://localhost:${live ? 4700 : 4600}` };
+  return {
+    plugins: [react()],
+    build: { outDir: live ? 'dist-live' : 'dist' },
+    server: { port, strictPort: true, proxy },
+    preview: { port, strictPort: true, proxy },
+  };
 });
