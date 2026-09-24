@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ErrorBox, Kpi, Loading, PageHead } from '../components/ui';
+import { ErrorBox, Kpi, Loading, PageHead, Pager } from '../components/ui';
 import { api, qs } from '../lib/api';
 import { useMeta } from '../lib/auth';
 import { useLoad, useUrlFilters } from '../lib/hooks';
+
+const HEALTH_PAGE_SIZE = 10;
 
 interface HealthRow { id: number | null; name: string; open: number; overdue: number; due_today: number; waiting_material: number; waiting_approval: number; closed: number; reopened: number; reopen_rate: number }
 interface DashData { kpi: Record<string, number>; health: HealthRow[]; group_by: string }
@@ -24,7 +26,7 @@ const STATUS_FILTERS: { key: string; label: string; test: (r: HealthRow) => bool
 
 export function Dashboard() {
   const meta = useMeta();
-  const f = useUrlFilters({ property_id: '', group_by: 'property', q: '', status: '' });
+  const f = useUrlFilters({ property_id: '', group_by: 'property', q: '', status: '', page: '1' });
   const { data, error, loading, reload } = useLoad(() => api.get<DashData>('/dashboard', f.values), [f.key]);
   const base = { property_id: f.values.property_id };
   const link = (extra: Record<string, string>) => `/job-cards${qs({ ...base, ...extra })}`;
@@ -33,6 +35,8 @@ export function Dashboard() {
   const statusFilter = STATUS_FILTERS.find((s) => s.key === f.values.status) ?? STATUS_FILTERS[0];
   const nameOptions = meta[group.metaKey];
   const rows = (data?.health ?? []).filter((r) => r.name.toLowerCase().includes(f.values.q.trim().toLowerCase()) && statusFilter.test(r));
+  const page = Math.max(1, Number(f.values.page) || 1);
+  const pagedRows = rows.slice((page - 1) * HEALTH_PAGE_SIZE, page * HEALTH_PAGE_SIZE);
 
   return (
     <>
@@ -101,10 +105,10 @@ export function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.length === 0 && (
+                  {pagedRows.length === 0 && (
                     <tr><td colSpan={8} className="empty" style={{ padding: 24 }}>No {group.label.toLowerCase()}s match this filter.</td></tr>
                   )}
-                  {rows.map((r) => {
+                  {pagedRows.map((r) => {
                     const to = (extra: Record<string, string>) => (r.id ? link({ [group.filter]: String(r.id), ...extra }) : undefined);
                     const cell = (n: number, extra: Record<string, string>, cls = '') => {
                       const href = to(extra);
@@ -126,6 +130,7 @@ export function Dashboard() {
                 </tbody>
               </table>
             </div>
+            <Pager page={page} pageSize={HEALTH_PAGE_SIZE} total={rows.length} onPage={(p) => f.set({ page: String(p) })} />
           </div>
         </>
       )}

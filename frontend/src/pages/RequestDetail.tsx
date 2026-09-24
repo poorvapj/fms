@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { ImagePicker } from '../components/ImagePicker';
@@ -50,57 +50,99 @@ function DelayText({ stage, onHold }: { stage: Stage; onHold: boolean }) {
   return <span className="muted">—</span>;
 }
 
-// ---------------------------------------------------------------------------------------------------- timeline
+// ---------------------------------------------------------------------------------------------------- workflow stepper (horizontal) + detail-on-click
 
-function Timeline({ d, onEdit, canEdit }: { d: Detail; onEdit: (s: Stage) => void; canEdit: boolean }) {
+/** Node status class for the compact stepper dot / connecting line. */
+function stepClass(s: Stage, onHold: boolean): string {
+  const late = s.status === 'completed' && (s.delay_minutes ?? 0) > 0;
+  const overdue = s.status === 'active' && !onHold && (s.running_delay_minutes ?? 0) > 0;
+  return [s.status, late || overdue ? 'late' : ''].filter(Boolean).join(' ');
+}
+
+function StepDot({ s }: { s: Stage }) {
+  if (s.status === 'completed') return <Icon name="check" size={13} />;
+  if (s.status === 'rejected') return <Icon name="x" size={13} />;
+  if (s.status === 'skipped') return <Icon name="skip" size={11} />;
+  return <span className="step-num">{s.seq}</span>;
+}
+
+function WorkflowStepper({ d, selected, onSelect }: { d: Detail; selected: string; onSelect: (key: string) => void }) {
   const onHold = d.request.status === 'on_hold';
+  const stepperRef = useRef<HTMLDivElement>(null);
+  const selectedRef = useRef<HTMLButtonElement>(null);
+  // Keep whichever stage is selected in view — a job far along the workflow shouldn't need a manual scroll to see it.
+  // Scrolls only the stepper's own scroll container (never the page): scrollIntoView() would otherwise
+  // walk up every scrollable ancestor, including the page itself on narrow screens.
+  useEffect(() => {
+    const track = stepperRef.current;
+    const btn = selectedRef.current;
+    if (!track || !btn) return;
+    const target = btn.offsetLeft - track.clientWidth / 2 + btn.offsetWidth / 2;
+    track.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [selected]);
   return (
-    <ol className="timeline">
-      {d.stages.map((s) => {
-        const late = s.status === 'completed' && (s.delay_minutes ?? 0) > 0;
-        const cls = [s.status === 'completed' ? 'done' : s.status, late ? 'late' : ''].join(' ');
-        const ev = d.attachments.filter((a) => a.stage_key === s.stage_key);
-        const person = s.engineer_name && s.engineer_name !== s.responsible_name ? `${s.responsible_name ?? '—'} · Engg: ${s.engineer_name}` : s.responsible_name ?? s.engineer_name;
-        return (
-          <li key={s.stage_key} className={`tl-item ${cls}`}>
-            <div className="tl-node">
-              {s.status === 'completed' ? <Icon name="check" size={15} /> : s.status === 'rejected' ? <Icon name="x" size={15} /> : s.status === 'skipped' ? <Icon name="skip" size={13} /> : <span className="small" style={{ fontWeight: 700 }}>{s.seq}</span>}
+    <div className="stepper" ref={stepperRef}>
+      {d.stages.map((s, i) => (
+        <div className="step-wrap" key={s.stage_key}>
+          <button
+            ref={s.stage_key === selected ? selectedRef : undefined}
+            type="button"
+            className={`step ${stepClass(s, onHold)}${s.stage_key === selected ? ' selected' : ''}`}
+            onClick={() => onSelect(s.stage_key)}
+            title={s.name}
+          >
+            <span className="step-dot"><StepDot s={s} /></span>
+            <span className="step-label">{s.name}</span>
+          </button>
+          {i < d.stages.length - 1 && <span className={`step-line ${s.status === 'completed' ? 'done' : ''}`} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Detail card for whichever single stage is selected in the stepper — the full picture, without repeating it 12×. */
+function StageDetail({ d, stageKey, onEdit, canEdit }: { d: Detail; stageKey: string; onEdit: (s: Stage) => void; canEdit: boolean }) {
+  const s = d.stages.find((x) => x.stage_key === stageKey);
+  if (!s) return null;
+  const onHold = d.request.status === 'on_hold';
+  const late = s.status === 'completed' && (s.delay_minutes ?? 0) > 0;
+  const ev = d.attachments.filter((a) => a.stage_key === s.stage_key);
+  const person = s.engineer_name && s.engineer_name !== s.responsible_name ? `${s.responsible_name ?? '—'} · Engg: ${s.engineer_name}` : s.responsible_name ?? s.engineer_name;
+  return (
+    <div className="tl-card">
+      <div className="tl-top">
+        <span className="tl-title">{s.name}</span>
+        {s.optional && <span className="badge inferred">optional</span>}
+        <StageStatusBadge status={s.status} late={late} />
+        {s.decision && <span className={`badge ${s.decision === 'approved' ? 'closed' : 'cancelled'}`}>{cap(s.decision)}</span>}
+        {s.source === 'fms_import' && <span className="badge src">FMS</span>}
+        <span className="grow" />
+        {canEdit && s.stage_key !== 'created' && <button className="btn sm ghost" onClick={() => onEdit(s)} title="Correct this stage"><Icon name="edit" size={13} />Edit</button>}
+      </div>
+      {s.status !== 'skipped' ? (
+        <div className="tl-grid">
+          <div><div className="k">Planned</div><div className="v">{fmtDateTime(s.planned_at)}{s.planned_inferred && <> <span className="badge inferred" title="Derived from SLA rule — blank in FMS">SLA</span></>}</div></div>
+          <div><div className="k">Actual</div><div className="v">{fmtDateTime(s.actual_at)}{s.actual_inferred && <> <span className="badge inferred" title="Taken from Work Completion (no separate record in FMS)">inferred</span></>}</div></div>
+          <div><div className="k">Status</div><div className="v">{s.status === 'active' ? 'Current stage' : cap(s.status)}</div></div>
+          <div><div className="k">Delay</div><div className="v"><DelayText stage={s} onHold={onHold} /></div></div>
+          <div><div className="k">Person</div><div className="v">{person ?? <span className="muted">{s.responsible_role ?? '—'}</span>}</div></div>
+        </div>
+      ) : (
+        s.comments && <div className="muted small" style={{ padding: '8px 12px' }}>{s.comments}</div>
+      )}
+      {((s.status !== 'skipped' && s.comments) || ev.length > 0 || s.legacy) && (
+        <div className="tl-extra">
+          {s.status !== 'skipped' && s.comments && <div><Icon name="message" size={13} /> {s.comments}</div>}
+          <Evidence items={ev} />
+          {s.legacy && (
+            <div className="muted small">
+              FMS sheet values: {Object.entries(s.legacy).map(([k, v]) => `${cap(k)} “${v}”`).join(' · ')}
             </div>
-            <div className="tl-card">
-              <div className="tl-top">
-                <span className="tl-title">{s.name}</span>
-                {s.optional && <span className="badge inferred">optional</span>}
-                <StageStatusBadge status={s.status} late={late} />
-                {s.decision && <span className={`badge ${s.decision === 'approved' ? 'closed' : 'cancelled'}`}>{cap(s.decision)}</span>}
-                {s.source === 'fms_import' && <span className="badge src">FMS</span>}
-                <span className="grow" />
-                {canEdit && s.stage_key !== 'created' && <button className="btn sm ghost" onClick={() => onEdit(s)} title="Correct this stage"><Icon name="edit" size={13} />Edit</button>}
-              </div>
-              {s.status !== 'skipped' && (
-                <div className="tl-grid">
-                  <div><div className="k">Planned</div><div className="v">{fmtDateTime(s.planned_at)}{s.planned_inferred && <> <span className="badge inferred" title="Derived from SLA rule — blank in FMS">SLA</span></>}</div></div>
-                  <div><div className="k">Actual</div><div className="v">{fmtDateTime(s.actual_at)}{s.actual_inferred && <> <span className="badge inferred" title="Taken from Work Completion (no separate record in FMS)">inferred</span></>}</div></div>
-                  <div><div className="k">Status</div><div className="v">{s.status === 'active' ? 'Current stage' : cap(s.status)}</div></div>
-                  <div><div className="k">Delay</div><div className="v"><DelayText stage={s} onHold={onHold} /></div></div>
-                  <div><div className="k">Person</div><div className="v">{person ?? <span className="muted">{s.responsible_role ?? '—'}</span>}</div></div>
-                </div>
-              )}
-              {(s.comments || ev.length > 0 || s.legacy) && (
-                <div className="tl-extra">
-                  {s.comments && <div><Icon name="message" size={13} /> {s.comments}</div>}
-                  <Evidence items={ev} />
-                  {s.legacy && (
-                    <div className="muted small">
-                      FMS sheet values: {Object.entries(s.legacy).map(([k, v]) => `${cap(k)} “${v}”`).join(' · ')}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -450,11 +492,14 @@ export function RequestDetail() {
   const { can } = useAuth();
   const { data, error, loading, reload, setData } = useLoad(() => api.get<Detail>(`/requests/${id}`), [id]);
   const [editing, setEditing] = useState<Stage | null>(null);
+  const [manualStage, setManualStage] = useState<string | null>(null);
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return null;
   const r = data.request;
+  const defaultStage = r.current_stage_key ?? [...data.stages].reverse().find((s) => s.status === 'completed')?.stage_key ?? data.stages[0]?.stage_key ?? '';
+  const selectedStage = manualStage ?? defaultStage;
   const fact = (k: string, v: ReactNode) => <div className="fact"><div className="k">{k}</div><div className="v">{v ?? '—'}</div></div>;
   const locationImages = data.attachments.filter((a) => a.stage_key === 'created');
   const otherFiles = data.attachments.filter((a) => a.stage_key !== 'created');
@@ -499,11 +544,14 @@ export function RequestDetail() {
 
       <div className="grid grid-sidebar">
         <div>
-          <StageActionPanel key={`${r.current_stage_key}-${r.status}`} d={data} onDone={setData} />
-          <div className="card">
-            <div className="card-head"><h2>Workflow timeline</h2><span className="muted small">Planned → Actual → Status → Delay → Person → Comments / Evidence</span></div>
-            <div className="card-body"><Timeline d={data} onEdit={setEditing} canEdit={can('stage.edit_history')} /></div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-head"><h2>Workflow</h2><span className="muted small">Click a stage for its details</span></div>
+            <div className="card-body stack">
+              <WorkflowStepper d={data} selected={selectedStage} onSelect={setManualStage} />
+              <StageDetail d={data} stageKey={selectedStage} onEdit={setEditing} canEdit={can('stage.edit_history')} />
+            </div>
           </div>
+          <StageActionPanel key={`${r.current_stage_key}-${r.status}`} d={data} onDone={setData} />
         </div>
         <div className="stack">
           <div className="card">
