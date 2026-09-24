@@ -13,7 +13,7 @@ type Kind = 'properties' | 'categories' | 'engineers';
 const CONFIG: Record<Kind, { title: string; singular: string; sub: string; filterKey: string; fields: { key: string; label: string; type?: 'priority' | 'bool' | 'int' }[] }> = {
   properties: { title: 'Properties', singular: 'property', sub: 'Sites and buildings where work is requested', filterKey: 'property_id', fields: [{ key: 'sort_order', label: 'Display order', type: 'int' }, { key: 'code', label: 'Code' }, { key: 'type', label: 'Type' }, { key: 'address', label: 'Address' }] },
   categories: { title: 'Work Categories', singular: 'category', sub: 'Trades / types of work, with default priority', filterKey: 'category_id', fields: [{ key: 'sort_order', label: 'Display order', type: 'int' }, { key: 'description', label: 'Description' }, { key: 'default_priority', label: 'Default priority', type: 'priority' }] },
-  engineers: { title: 'Engineers', singular: 'engineer', sub: 'Site and work engineers; link a login in Masters → Users', filterKey: 'engineer_id', fields: [{ key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' }, { key: 'specialization', label: 'Specialisation' }, { key: 'is_external', label: 'External / vendor', type: 'bool' }] },
+  engineers: { title: 'Engineers', singular: 'engineer', sub: 'Site and work engineers; link a login in Masters → Users', filterKey: 'engineer_id', fields: [{ key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' }, { key: 'specialization', label: 'Specialisation' }, { key: 'is_external', label: 'External / vendor', type: 'bool' }, { key: 'slack_user_id', label: 'Slack user ID' }] },
 };
 
 export function MasterList({ kind, embedded }: { kind: Kind; embedded?: boolean }) {

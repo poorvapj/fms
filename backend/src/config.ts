@@ -52,4 +52,7 @@ export const config = {
    */
   trustProxy: /^\d+$/.test(process.env.TRUST_PROXY ?? '') ? Number(process.env.TRUST_PROXY) : (process.env.TRUST_PROXY || (ON_RENDER ? 2 : 'loopback')),
   maxUploadMb: 15,
+  /** Slack bot for site-visit Yes/No notifications (backend/.env). Unset disables the feature entirely. */
+  slackBotToken: process.env.SLACK_BOT_TOKEN ?? '',
+  slackSigningSecret: process.env.SLACK_SIGNING_SECRET ?? '',
 };

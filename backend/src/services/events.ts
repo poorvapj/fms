@@ -4,7 +4,7 @@ import { nowLocal } from '../utils/dates.ts';
 
 export type EventType =
   | 'created' | 'imported' | 'stage_completed' | 'stage_skipped' | 'stage_rejected' | 'stage_edited'
-  | 'comment' | 'attachment' | 'assigned' | 'hold' | 'resume' | 'cancel' | 'reopen' | 'edited';
+  | 'comment' | 'attachment' | 'assigned' | 'hold' | 'resume' | 'cancel' | 'reopen' | 'edited' | 'slack_notified';
 
 export interface EventOpts { stageKey?: string | null; data?: unknown; user?: AuthUser | null; userName?: string; at?: string }
 

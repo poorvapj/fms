@@ -8,6 +8,7 @@ import { logEvent } from './events.ts';
 import { assertCanView, loadRequest } from './requests.ts';
 import { stageDef, stageDefs } from './stageDefs.ts';
 import { refreshState, saveRequest, stageOf, type RequestDoc, type StageDoc } from './workflowEngine.ts';
+import { notifySiteVisitIfNeeded } from './slack.ts';
 
 /** Whether a user may act on a stage of a job card (role + engineer binding). */
 export function canActOnStage(user: AuthUser, def: StageDefinition, r: Doc, stage: StageDoc | null): boolean {
@@ -117,6 +118,7 @@ export async function completeStage(requestId: number, key: StageKey, body: any,
   });
   refreshState(r);
   await saveRequest(r);
+  await notifySiteVisitIfNeeded(r).catch((e) => console.error('Slack notify failed:', e));
   const verb = def.decision ? 'approved' : 'completed';
   await logEvent(requestId, 'stage_completed', `${def.name} ${verb}${extra.length ? ` — ${extra.join(', ')}` : ''}${comments ? `: ${comments}` : ''}`, {
     stageKey: key, user, data: { actual_at: actual, planned_at: stage.planned_at },
@@ -297,6 +299,7 @@ export async function assignEngineers(requestId: number, body: any, user: AuthUs
   }
   if (!changes.length) throw badRequest('Nothing to assign');
   await saveRequest(r);
+  await notifySiteVisitIfNeeded(r).catch((e) => console.error('Slack notify failed:', e));
   await logEvent(requestId, 'assigned', `Reassigned: ${changes.join('; ')}`, { user });
 }
 

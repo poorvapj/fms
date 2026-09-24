@@ -5,6 +5,7 @@ import { config } from './config.ts';
 import { connect } from './db/mongo.ts';
 import { ensureBaseData } from './db/seed.ts';
 import { api } from './routes/api.ts';
+import { slackRoutes } from './routes/slack.ts';
 import { HttpError } from './utils/http.ts';
 
 await connect();
@@ -32,6 +33,8 @@ app.use('/api', (req, res, next) => {
   }
   next();
 });
+// Slack signs the raw body itself and has no session cookie, so it's handled before JSON parsing / CSRF / auth.
+app.use('/api/slack', slackRoutes);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false, limit: '2mb' }));
 app.use(cookieParser());

@@ -18,7 +18,7 @@ interface MasterSpec {
 const SPECS: Record<MasterKind, MasterSpec> = {
   properties: { table: 'properties', label: 'Property', fields: { code: 'text', type: 'text', address: 'text', sort_order: 'int' } },
   categories: { table: 'work_categories', label: 'Work category', fields: { description: 'text', default_priority: 'priority', sort_order: 'int' } },
-  engineers: { table: 'engineers', label: 'Engineer', fields: { phone: 'text', email: 'text', specialization: 'text', is_external: 'bool' } },
+  engineers: { table: 'engineers', label: 'Engineer', fields: { phone: 'text', email: 'text', specialization: 'text', is_external: 'bool', slack_user_id: 'text' } },
 };
 
 export function isMasterKind(k: string): k is MasterKind {

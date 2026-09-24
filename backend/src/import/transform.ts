@@ -272,7 +272,7 @@ export function transformRow(
 
   const narration = description ?? '';
   const titleSource = req.title || narration;
-  const title = titleSource ? titleSource.replace(/\s+/g, ' ').slice(0, 80) + (titleSource.length > 80 ? '…' : '') : `${category} work at ${property}`;
+  const title = titleSource ? titleSource.replace(/\s+/g, ' ').trim() : `${category} work at ${property}`;
   return {
     issues,
     record: {
