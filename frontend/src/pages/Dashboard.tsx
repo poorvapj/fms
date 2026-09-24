@@ -8,9 +8,9 @@ interface HealthRow { id: number | null; name: string; open: number; overdue: nu
 interface DashData { kpi: Record<string, number>; health: HealthRow[]; group_by: string }
 
 const GROUPS = [
-  { key: 'property', label: 'Project', filter: 'property_id' },
-  { key: 'category', label: 'Category', filter: 'category_id' },
-  { key: 'engineer', label: 'Engineer', filter: 'engineer_id' },
+  { key: 'property', label: 'Project', filter: 'property_id', metaKey: 'properties' as const },
+  { key: 'category', label: 'Category', filter: 'category_id', metaKey: 'categories' as const },
+  { key: 'engineer', label: 'Engineer', filter: 'engineer_id', metaKey: 'engineers' as const },
 ];
 
 const STATUS_FILTERS: { key: string; label: string; test: (r: HealthRow) => boolean }[] = [
@@ -31,6 +31,7 @@ export function Dashboard() {
   const group = GROUPS.find((g) => g.key === f.values.group_by) ?? GROUPS[0];
   const k = data?.kpi;
   const statusFilter = STATUS_FILTERS.find((s) => s.key === f.values.status) ?? STATUS_FILTERS[0];
+  const nameOptions = meta[group.metaKey];
   const rows = (data?.health ?? []).filter((r) => r.name.toLowerCase().includes(f.values.q.trim().toLowerCase()) && statusFilter.test(r));
 
   return (
@@ -72,6 +73,13 @@ export function Dashboard() {
               </div>
             </div>
             <div className="filters" style={{ borderRadius: 0 }}>
+              <div className="f">
+                <label htmlFor="dh-site">{group.label}</label>
+                <select id="dh-site" className="select" style={{ minWidth: 200 }} value={f.values.q} onChange={(e) => f.set({ q: e.target.value })}>
+                  <option value="">All {group.label.toLowerCase()}s</option>
+                  {nameOptions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+              </div>
               <div className="f search">
                 <label htmlFor="dh-q">Search {group.label.toLowerCase()}</label>
                 <input id="dh-q" className="input" placeholder={`Search ${group.label.toLowerCase()} name…`} value={f.values.q} onChange={(e) => f.set({ q: e.target.value })} />
