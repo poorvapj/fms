@@ -10,7 +10,11 @@ import { cap, SOURCE_LABEL } from '../lib/format';
 import { useLoad, useUrlFilters } from '../lib/hooks';
 import type { Paged, RequestRow } from '../lib/types';
 
-/** Saved views — the one-click filters of the Job Cards list. */
+/**
+ * Saved views — shortcuts that the Status dropdown alone can't do (a combination of statuses,
+ * a specific stage, or the overdue flag). Plain single-status views (In progress / On hold / Closed)
+ * are left out here since the Status dropdown already does exactly that.
+ */
 const VIEWS: { key: string; label: string; filter: Record<string, string> }[] = [
   { key: '', label: 'All views', filter: {} },
   { key: 'open', label: 'Open jobs', filter: { status: 'active,on_hold' } },
@@ -18,10 +22,7 @@ const VIEWS: { key: string; label: string; filter: Record<string, string> }[] = 
   { key: 'raised', label: 'Raised — awaiting approval', filter: { stage: 'triage', status: 'active' } },
   { key: 'approval', label: 'Waiting approval', filter: { stage: 'ph_discussion,permission', status: 'active' } },
   { key: 'material', label: 'Waiting material', filter: { stage: 'material', status: 'active' } },
-  { key: 'in_progress', label: 'In progress', filter: { status: 'in_progress' } },
   { key: 'verification', label: 'Verification pending', filter: { stage: 'verification,closed', status: 'active' } },
-  { key: 'on_hold', label: 'On hold', filter: { status: 'on_hold' } },
-  { key: 'closed', label: 'Closed', filter: { status: 'closed' } },
   { key: 'fms', label: 'Imported from FMS', filter: { source: 'fms_import' } },
 ];
 
@@ -37,7 +38,7 @@ export function JobCards() {
   const v = f.values;
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(v.q);
-  const [more, setMore] = useState(['property_id', 'category_id', 'status', 'stage', 'engineer_id', 'priority', 'from', 'to', 'source'].some((k) => v[k as keyof typeof v]));
+  const [more, setMore] = useState(['engineer_id', 'priority', 'from', 'to', 'source'].some((k) => v[k as keyof typeof v]));
   useEffect(() => setQ(v.q), [v.q]);
   useEffect(() => {
     const t = setTimeout(() => q !== v.q && f.set({ q }), 350);
@@ -47,7 +48,7 @@ export function JobCards() {
 
   const view = VIEWS.find((x) => x.key === v.view) ?? VIEWS[0];
   const query = { ...v, ...Object.fromEntries(Object.entries(view.filter).filter(([k]) => !v[k as keyof typeof v])), view: undefined };
-  const { data, error, loading, reload } = useLoad(() => api.get<Paged<RequestRow>>('/requests', { ...query, page_size: 25 }), [f.key]);
+  const { data, error, loading, reload } = useLoad(() => api.get<Paged<RequestRow>>('/requests', { ...query, page_size: 10 }), [f.key]);
   const exportUrl = `${API_BASE}/requests/export.csv${qs({ ...query, page: undefined, sort: undefined, dir: undefined })}`;
   const showNew = params.get('new') === '1';
   const closeNew = () => { const n = new URLSearchParams(params); n.delete('new'); setParams(n, { replace: true }); };
@@ -84,15 +85,15 @@ export function JobCards() {
               {VIEWS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
             </select>
           </div>
+          {sel('property_id', 'Project', meta.properties.map((p) => ({ value: p.id, label: p.name })))}
+          {sel('status', 'Status', meta.statuses.map((s) => ({ value: s.key, label: s.label })))}
+          {sel('category_id', 'Category', meta.categories.map((c) => ({ value: c.id, label: c.name })))}
+          {sel('stage', 'Next Action', meta.stages.filter((s) => s.key !== 'created').map((s) => ({ value: s.key, label: s.name })))}
           <button className="btn ghost" onClick={() => setMore(!more)}>{more ? 'Fewer filters' : 'More filters'}</button>
           {Object.entries(v).some(([k, val]) => !['page', 'sort', 'dir'].includes(k) && val) && <button className="btn ghost" onClick={f.reset}>Clear</button>}
         </div>
         {more && (
           <div className="filters" style={{ borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', background: 'var(--surface)' }}>
-            {sel('property_id', 'Property', meta.properties.map((p) => ({ value: p.id, label: p.name })))}
-            {sel('category_id', 'Work category', meta.categories.map((c) => ({ value: c.id, label: c.name })))}
-            {sel('status', 'Status', meta.statuses.map((s) => ({ value: s.key, label: s.label })))}
-            {sel('stage', 'Stage', meta.stages.filter((s) => s.key !== 'created').map((s) => ({ value: s.key, label: s.name })))}
             {sel('engineer_id', 'Engineer', meta.engineers.map((e) => ({ value: e.id, label: e.name })))}
             {sel('priority', 'Priority', meta.priorities.map((p) => ({ value: p, label: cap(p) })))}
             {sel('source', 'Source', Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label })))}
