@@ -89,9 +89,8 @@ export function Field({ label, required, help, children, full, error, className 
   return (
     <div className={`field${full ? ' full' : ''}${error ? ' invalid' : ''}${className ? ` ${className}` : ''}`}>
       <label>{label}{required && <span className="req"> *</span>}</label>
-      {help && className === 'gq' && <div className="help">{help}</div>}
       {children}
-      {help && className !== 'gq' && <div className="help">{help}</div>}
+      {help && <div className="help">{help}</div>}
       {error && <div className="field-error" role="alert"><Icon name="alert" size={14} />{error}</div>}
     </div>
   );

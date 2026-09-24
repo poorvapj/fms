@@ -55,10 +55,7 @@ export function missingFields(v: JobCardValues, images: File[], opts: { email: b
   return missingKeys(v, images, opts).map((k) => FIELD_LABELS[k]);
 }
 
-/**
- * Public mode renders one Google-Forms-style card per question, stacked; internal mode renders a compact grid.
- * `invalid` marks questions to highlight with "This is a required question".
- */
+/** Job card questions in a two-column grid. `invalid` marks questions to highlight with "This is a required question". */
 export function JobCardForm({ value, onChange, images, onImages, options, publicMode, onError, invalid = [] }: {
   value: JobCardValues; onChange: (v: JobCardValues) => void; images: File[]; onImages: (f: File[]) => void;
   options: Options; publicMode?: boolean; onError: (msg: string) => void; invalid?: FieldKey[];
@@ -68,13 +65,13 @@ export function JobCardForm({ value, onChange, images, onImages, options, public
     const bad = invalid.includes(key);
     const error = bad ? (key === 'requester_email' && value.requester_email.trim() ? 'Enter a valid email address' : 'This is a required question') : undefined;
     return (
-      <Field key={key} label={label} required={required} full={opts.full} help={opts.help} error={error} className={publicMode ? 'gq' : undefined}>
+      <Field key={key} label={label} required={required} full={opts.full} help={opts.help} error={error}>
         {control}
       </Field>
     );
   };
   const sel = (k: 'work_type' | 'category_id' | 'property_id', items: { value: string | number; label: string }[]) => (
-    <select className="select" value={value[k]} onChange={set(k)} style={publicMode ? { maxWidth: 280 } : undefined}>
+    <select className="select" value={value[k]} onChange={set(k)}>
       <option value="">Choose</option>
       {items.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -89,15 +86,16 @@ export function JobCardForm({ value, onChange, images, onImages, options, public
     q('work_type', 'Work', true, sel('work_type', options.work_types.map((w) => ({ value: w.key, label: w.label })))),
     q('category_id', 'Work Category', true, sel('category_id', options.categories.map((c) => ({ value: c.id, label: c.name })))),
     q('property_id', 'Property', true, sel('property_id', options.properties.map((p) => ({ value: p.id, label: p.name })))),
-    q('property_no', 'Property No.', true, <input className="input" value={value.property_no} onChange={set('property_no')} placeholder={publicMode ? 'Your answer' : 'e.g. B-204 / Villa 12 / Block C'} maxLength={120} />),
-    q('target_date', 'Work Completion Date', true, <input type="date" className="input" style={publicMode ? { maxWidth: 200 } : undefined} min={todayInput()} value={value.target_date} onChange={set('target_date')} />),
-    q('images', 'Image of Location', true, <ImagePicker files={images} onChange={onImages} max={10} onError={onError} label={publicMode ? 'Add file' : 'Add photo'} />,
-      { full: true, help: 'Upload up to 10 supported files. Max 15 MB per file.' }),
-    q('description', 'Narration', true, <textarea className="input" value={value.description} onChange={set('description')} maxLength={5000} placeholder="Your answer" />, { full: true }),
-    q('reason', 'Reason', !!publicMode, <input className="input" value={value.reason} onChange={set('reason')} maxLength={2000} placeholder="Your answer" />, { full: true }),
+    q('property_no', 'Property No.', true, <input className="input" value={value.property_no} onChange={set('property_no')} placeholder="e.g. B-204 / Villa 12 / Block C" maxLength={120} />),
+    q('target_date', 'Work Completion Date', true, <input type="date" className="input" min={todayInput()} value={value.target_date} onChange={set('target_date')} />),
+    <div key="date-spacer" />, // date sits alone on its row
+    q('images', 'Image of Location', true, <ImagePicker files={images} onChange={onImages} max={10} onError={onError} label="Add photo" />,
+      { full: true, help: 'Upload up to 10 photos (max 15 MB each).' }),
+    q('description', 'Narration', true, <textarea className="input" value={value.description} onChange={set('description')} maxLength={5000} placeholder="Describe the work / problem" />, { full: true }),
+    q('reason', 'Reason', !!publicMode, <input className="input" value={value.reason} onChange={set('reason')} maxLength={2000} placeholder="Why is this work needed?" />, { full: true }),
   ];
 
-  return <div className={publicMode ? 'gform' : 'form-grid'}>{questions}</div>;
+  return <div className="form-grid">{questions}</div>;
 }
 
 export function toFormData(v: JobCardValues, images: File[], extra: Record<string, string> = {}): FormData {

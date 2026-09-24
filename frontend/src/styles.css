@@ -397,15 +397,6 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .dl { grid-template-columns: 110px 1fr; }
 }
 
-/* Google-Forms-style public form: one card per question */
-.gform { display: flex; flex-direction: column; gap: 12px; }
-.gform .gq { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px 24px; gap: 10px; }
-.gform .gq > label { font-size: 15px; font-weight: 500; color: var(--text); }
-.gform .gq .help { margin-top: -4px; }
-.gform .gq .input:not(select):not(textarea) { border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0; padding: 0 2px; max-width: 420px; }
-.gform .gq textarea.input { max-width: none; }
-.gform .gq .input:not(select):focus { box-shadow: none; border-bottom: 2px solid var(--accent); }
-.field.invalid .input, .field.invalid .select { border-color: var(--bad); }
-.gform .gq.invalid { border-color: var(--bad); }
+/* required-question errors */
+.field.invalid .input, .field.invalid .select, .field.invalid .upload-add { border-color: var(--bad); }
 .field-error { display: flex; align-items: center; gap: 6px; color: var(--bad); font-size: 12.5px; }
-.public-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
