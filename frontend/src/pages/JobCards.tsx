@@ -31,6 +31,18 @@ const DEFAULTS = {
   page: '1', sort: 'requested_at', dir: 'desc',
 };
 
+/** Quick-count chips: each carries the exact filter combo that matches its dashboard KPI count. */
+const CHIPS: { label: string; kpi: string; patch: Record<string, string> }[] = [
+  { label: 'All', kpi: 'total', patch: { status: '', stage: '', overdue: '', view: '' } },
+  { label: 'Open', kpi: 'open_jobs', patch: { status: 'active,on_hold', stage: '', overdue: '', view: '' } },
+  { label: 'Overdue', kpi: 'overdue', patch: { status: '', stage: '', overdue: '1', view: '' } },
+  { label: 'Waiting Approval', kpi: 'waiting_approval', patch: { status: 'active', stage: 'triage,ph_discussion,permission', overdue: '', view: '' } },
+  { label: 'Waiting Material', kpi: 'waiting_material', patch: { status: 'active', stage: 'material', overdue: '', view: '' } },
+  { label: 'In Progress', kpi: 'in_progress', patch: { status: 'in_progress', stage: '', overdue: '', view: '' } },
+  { label: 'On Hold', kpi: 'on_hold', patch: { status: 'on_hold', stage: '', overdue: '', view: '' } },
+  { label: 'Closed', kpi: 'closed', patch: { status: 'closed', stage: '', overdue: '', view: '' } },
+];
+
 export function JobCards() {
   const meta = useMeta();
   const { can } = useAuth();
@@ -49,6 +61,7 @@ export function JobCards() {
   const view = VIEWS.find((x) => x.key === v.view) ?? VIEWS[0];
   const query = { ...v, ...Object.fromEntries(Object.entries(view.filter).filter(([k]) => !v[k as keyof typeof v])), view: undefined };
   const { data, error, loading, reload } = useLoad(() => api.get<Paged<RequestRow>>('/requests', { ...query, page_size: 10 }), [f.key]);
+  const { data: kpiData } = useLoad(() => api.get<{ kpi: Record<string, number> }>('/dashboard', query), [f.key]);
   const exportUrl = `${API_BASE}/requests/export.csv${qs({ ...query, page: undefined, sort: undefined, dir: undefined })}`;
   const showNew = params.get('new') === '1';
   const closeNew = () => { const n = new URLSearchParams(params); n.delete('new'); setParams(n, { replace: true }); };
@@ -73,6 +86,18 @@ export function JobCards() {
           {can('request.create') && <button className="btn primary" onClick={() => setParams({ ...Object.fromEntries(params), new: '1' })}><Icon name="plus" size={14} />New Job Card</button>}
         </>}
       />
+      {kpiData && (
+        <div className="row wrap" style={{ marginBottom: 16 }}>
+          {CHIPS.map((c) => {
+            const on = Object.entries(c.patch).every(([k, val]) => v[k as keyof typeof v] === val);
+            return (
+              <button key={c.label} className={`chip${on ? ' on' : ''}`} onClick={() => f.set(c.patch)}>
+                {c.label} <b>{(kpiData.kpi[c.kpi] ?? 0).toLocaleString('en-IN')}</b>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="filters" style={{ borderRadius: 'var(--radius-lg)', borderBottom: more ? undefined : 0 }}>
           <div className="f search">
