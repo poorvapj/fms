@@ -1,7 +1,7 @@
 // Cross-platform launcher that selects the environment before anything loads.
 // Usage: node src/env.ts <local|live> <script.ts> [args...]
 //   e.g. node src/env.ts live src/index.ts
-// Loads backend/.env.<env> (e.g. MONGODB_URI) when the file exists; real environment variables win.
+// Loads backend/.env (MONGODB_URI_LOCAL / MONGODB_URI_LIVE, secrets) when present; real environment variables win.
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,7 +12,7 @@ if (!env || !['local', 'live'].includes(env) || !script) {
   process.exit(1);
 }
 process.env.FMS_ENV = env;
-const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', `.env.${env}`);
+const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const target = path.resolve(script);

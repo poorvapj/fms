@@ -1,5 +1,5 @@
 // Refresh the LOCAL test database with a copy of the LIVE data (live is only read, never changed).
-// Reads MONGODB_URI / MONGODB_DB from backend/.env.live and backend/.env.local.
+// Reads MONGODB_URI_LIVE and MONGODB_URI_LOCAL from backend/.env.
 // Usage: npm run copy-live-to-local
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -8,12 +8,13 @@ import { parseEnv } from 'node:util';
 import { MongoClient } from 'mongodb';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const envFile = path.join(root, '.env');
+const vars: Record<string, string | undefined> = { ...(existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {}), ...process.env };
 function target(env: 'live' | 'local') {
-  const file = path.join(root, `.env.${env}`);
-  const vars = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
-  const uri = vars.MONGODB_URI;
-  if (!uri) throw new Error(`MONGODB_URI missing in backend/.env.${env}`);
-  return { uri, db: vars.MONGODB_DB ?? (env === 'live' ? 'fms_live' : 'fms_local') };
+  const key = env === 'live' ? 'MONGODB_URI_LIVE' : 'MONGODB_URI_LOCAL';
+  const uri = vars[key];
+  if (!uri) throw new Error(`${key} missing in backend/.env`);
+  return { uri, db: env === 'live' ? 'fms_live' : 'fms_local' };
 }
 
 const live = target('live');

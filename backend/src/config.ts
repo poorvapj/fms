@@ -6,13 +6,15 @@ import { fileURLToPath } from 'node:url';
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Environment: "local" (testing on this computer) or "live" (real data). Each has its own MongoDB database
- * (MONGODB_URI / MONGODB_DB, loaded from backend/.env.<env>) and its own default ports, so testing never touches live data.
+ * Environment: "local" (testing on this computer) or "live" (real data). Each has its own MongoDB cluster
+ * (MONGODB_URI_LOCAL / MONGODB_URI_LIVE in backend/.env) and its own default ports, so testing never touches live data.
  * data/<env>/ only holds the generated session secret when JWT_SECRET is not set.
  */
 export type AppEnv = 'local' | 'live';
 const envName = (process.env.FMS_ENV ?? 'local').toLowerCase();
 export const APP_ENV: AppEnv = envName === 'live' || envName === 'production' ? 'live' : 'local';
+/** Render sets RENDER=true: HTTPS behind Vercel → Render proxies is assumed there (secure cookie, 2 trusted proxies). */
+const ON_RENDER = !!process.env.RENDER;
 const DEFAULT_PORTS = { local: { api: 4600, ui: 5600 }, live: { api: 4700, ui: 5700 } }[APP_ENV];
 
 const dataDir = path.resolve(process.env.FMS_DATA_DIR ?? path.join(serverRoot, 'data', APP_ENV));
@@ -33,21 +35,21 @@ export const config = {
   port: Number(process.env.PORT ?? DEFAULT_PORTS.api),
   /** Comma-separated origins allowed to call the API when the frontend is hosted separately. */
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-  cookieSameSite: (process.env.COOKIE_SAMESITE ?? 'strict') as 'strict' | 'lax' | 'none',
+  cookieSameSite: (process.env.COOKIE_SAMESITE ?? (ON_RENDER ? 'lax' : 'strict')) as 'strict' | 'lax' | 'none',
   serverRoot,
   dataDir,
   /** MongoDB connection (Atlas). Each environment points at its own cluster/database. */
-  mongoUri: process.env.MONGODB_URI ?? '',
+  mongoUri: process.env.MONGODB_URI ?? (APP_ENV === 'live' ? process.env.MONGODB_URI_LIVE : process.env.MONGODB_URI_LOCAL) ?? '',
   mongoDb: process.env.MONGODB_DB ?? (APP_ENV === 'live' ? 'fms_live' : 'fms_local'),
   /** Where the separately hosted frontend runs (used only for messages and CORS defaults). */
   frontendUrl: process.env.FRONTEND_URL ?? `http://localhost:${DEFAULT_PORTS.ui}`,
   jwtSecret: loadSecret(),
   sessionHours: Number(process.env.SESSION_HOURS ?? 12),
-  secureCookies: process.env.SECURE_COOKIES === 'true',
+  secureCookies: process.env.SECURE_COOKIES ? process.env.SECURE_COOKIES === 'true' : ON_RENDER,
   /**
    * How many proxies sit in front of the app (Express "trust proxy"), so req.ip is the real visitor.
    * Local: loopback only. Vercel -> Render: 2.
    */
-  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY ?? '') ? Number(process.env.TRUST_PROXY) : (process.env.TRUST_PROXY || 'loopback'),
+  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY ?? '') ? Number(process.env.TRUST_PROXY) : (process.env.TRUST_PROXY || (ON_RENDER ? 2 : 'loopback')),
   maxUploadMb: 15,
 };

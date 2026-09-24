@@ -1,6 +1,6 @@
 // One-time move of the old SQLite data (backend/data/<env>/fms.db + uploads/) into MongoDB.
-// Usage: npm run migrate:sqlite        (Local  → MONGODB_URI in backend/.env.local)
-//        npm run migrate:sqlite:live   (Live   → MONGODB_URI in backend/.env.live)
+// Usage: npm run migrate:sqlite        (Local → MONGODB_URI_LOCAL in backend/.env)
+//        npm run migrate:sqlite:live   (Live  → MONGODB_URI_LIVE in backend/.env)
 // Add --force to replace data already in the target MongoDB database.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';

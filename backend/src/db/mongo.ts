@@ -17,8 +17,8 @@ export async function connect(uri = config.mongoUri, dbName = config.mongoDb): P
   if (database) return database;
   if (!uri) {
     throw new Error(
-      `MONGODB_URI is not set for the ${config.env.toUpperCase()} environment. ` +
-      `Put it in backend/.env.${config.env} (see backend/.env.example) or in the host's environment settings.`,
+      `No MongoDB address for the ${config.env.toUpperCase()} environment. ` +
+      `Set ${config.env === 'live' ? 'MONGODB_URI_LIVE' : 'MONGODB_URI_LOCAL'} in backend/.env (or in the host's environment settings).`,
     );
   }
   client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000, appName: 'fms-operations' });
