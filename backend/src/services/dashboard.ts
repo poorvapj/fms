@@ -46,6 +46,13 @@ export async function dashboard(query: Record<string, any>, user: AuthUser) {
     reopened: count((r) => reopened.has(r._id)),
   };
 
+  const liveRows = rows.filter(live);
+  const bottlenecks = stageDefs()
+    .filter((d) => d.key !== 'created')
+    .map((d) => ({ stage: d.name, count: liveRows.reduce((n, r) => n + (r.current_stage_key === d.key ? 1 : 0), 0) }))
+    .filter((b) => b.count > 0)
+    .sort((a, b) => b.count - a.count);
+
   const groupBy = ['property', 'category', 'engineer'].includes(query.group_by) ? query.group_by : 'property';
   const keyOf = (r: Doc): number | null => (groupBy === 'property' ? r.property_id : groupBy === 'category' ? r.category_id : r.assigned_engineer_id ?? r.site_engineer_id ?? null);
   const nameMap = groupBy === 'property' ? names.properties : groupBy === 'category' ? names.categories : names.engineers;
@@ -67,7 +74,7 @@ export async function dashboard(query: Record<string, any>, user: AuthUser) {
     };
   }).sort((a, b) => b.open - a.open || b.overdue - a.overdue || a.name.localeCompare(b.name));
 
-  return { kpi, health, group_by: groupBy };
+  return { kpi, health, group_by: groupBy, bottlenecks };
 }
 
 /** Stages each non-engineer role is primarily responsible for (their "My Jobs" queue). */

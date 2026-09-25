@@ -7,7 +7,8 @@ import { useLoad, useUrlFilters } from '../lib/hooks';
 const HEALTH_PAGE_SIZE = 10;
 
 interface HealthRow { id: number | null; name: string; open: number; overdue: number; due_today: number; waiting_material: number; waiting_approval: number; closed: number; reopened: number; reopen_rate: number }
-interface DashData { kpi: Record<string, number>; health: HealthRow[]; group_by: string }
+interface Bottleneck { stage: string; count: number }
+interface DashData { kpi: Record<string, number>; health: HealthRow[]; group_by: string; bottlenecks: Bottleneck[] }
 
 const GROUPS = [
   { key: 'property', label: 'Project', filter: 'property_id', metaKey: 'properties' as const },
@@ -66,6 +67,21 @@ export function Dashboard() {
             <Kpi label="Reopened" value={k.reopened} hint="Closed jobs reopened for rework" tone="bad" />
             <Kpi label="On Hold" value={k.on_hold} to={link({ view: 'on_hold' })} hint="Included in Open Jobs" />
           </div>
+
+          {data.bottlenecks.length > 0 && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-head"><h2>Where work is stuck (bottlenecks)</h2></div>
+              <div className="card-body stack">
+                {(() => { const max = Math.max(...data.bottlenecks.map((b) => b.count)); return data.bottlenecks.map((b) => (
+                  <div className="bottleneck-row" key={b.stage}>
+                    <div className="bottleneck-label">{b.stage}</div>
+                    <div className="bottleneck-bar-track"><div className="bottleneck-bar" style={{ width: `${Math.max(2, (b.count / max) * 100)}%` }} /></div>
+                    <div className="bottleneck-count">{b.count.toLocaleString('en-IN')}</div>
+                  </div>
+                )); })()}
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <div className="card-head">

@@ -294,6 +294,25 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .step-line { flex: 0 0 20px; height: 2px; background: var(--border); margin-top: 14px; }
 .step-line.done { background: #abefc6; }
 
+.stage-strip { display: flex; gap: 0; overflow-x: auto; padding: 10px 16px; }
+.stage-strip-item { display: flex; flex-direction: column; align-items: center; text-align: center; flex: 1 1 92px; min-width: 84px; position: relative; }
+.stage-strip-item::before { content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.stage-strip-item:first-child::before { display: none; }
+.stage-strip-item.completed::before { background: var(--good); }
+.stage-strip-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border); background: var(--surface); color: var(--text-3); position: relative; z-index: 1; }
+.stage-strip-item.completed .stage-strip-dot { background: var(--good); border-color: var(--good); color: #fff; }
+.stage-strip-item.active .stage-strip-dot { border-color: var(--warn); color: var(--warn); }
+.stage-strip-item.rejected .stage-strip-dot { background: var(--bad); border-color: var(--bad); color: #fff; }
+.stage-strip-item.skipped .stage-strip-dot { border-style: dashed; opacity: 0.55; }
+.stage-strip-name { font-size: 11.5px; font-weight: 600; margin-top: 5px; line-height: 1.2; }
+.stage-strip-status { margin-top: 1px; letter-spacing: 0.03em; font-size: 10.5px; }
+
+.bottleneck-row { display: grid; grid-template-columns: 180px 1fr 56px; align-items: center; gap: 14px; }
+.bottleneck-label { font-size: 13.5px; font-weight: 500; color: var(--accent-ink); }
+.bottleneck-bar-track { height: 10px; border-radius: 6px; background: var(--muted-bg); overflow: hidden; }
+.bottleneck-bar { height: 100%; border-radius: 6px; background: var(--warn); }
+.bottleneck-count { text-align: right; font-weight: 700; }
+
 /* single-stage detail card (shown for whichever stage is selected in the stepper) */
 .tl-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .tl-top { display: flex; gap: 10px; align-items: center; padding: 9px 12px; flex-wrap: wrap; }
@@ -349,13 +368,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
 /* import wizard */
 .steps { display: flex; gap: 0; margin-bottom: 18px; overflow-x: auto; }
-.step { display: flex; align-items: center; gap: 8px; padding: 8px 14px 8px 0; font-weight: 550; color: var(--text-3); white-space: nowrap; }
-.step .n { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; font-size: 12px; }
-.step.on { color: var(--accent-ink); }
-.step.on .n { border-color: var(--accent); background: var(--accent); color: #fff; }
-.step.done { color: var(--text-2); }
-.step.done .n { border-color: var(--good); background: var(--good); color: #fff; }
-.step + .step::before { content: ""; width: 28px; height: 2px; background: var(--border); margin-right: 6px; }
+.wiz-step { display: flex; align-items: center; gap: 8px; padding: 8px 14px 8px 0; font-weight: 550; color: var(--text-3); white-space: nowrap; }
+.wiz-step .n { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; font-size: 12px; }
+.wiz-step.on { color: var(--accent-ink); }
+.wiz-step.on .n { border-color: var(--accent); background: var(--accent); color: #fff; }
+.wiz-step.done { color: var(--text-2); }
+.wiz-step.done .n { border-color: var(--good); background: var(--good); color: #fff; }
+.wiz-step + .wiz-step::before { content: ""; width: 28px; height: 2px; background: var(--border); margin-right: 6px; }
 .dropzone { border: 2px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 40px 20px; text-align: center; background: var(--surface-2); cursor: pointer; }
 .dropzone.drag, .dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
 .raw-table td, .raw-table th { font-size: 12px; padding: 5px 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

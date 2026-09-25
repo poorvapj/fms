@@ -30,7 +30,7 @@ interface Validation {
 const STEPS = ['Upload', 'Preview', 'Map columns', 'Validate', 'Import', 'Summary'];
 
 function Steps({ at }: { at: number }) {
-  return <div className="steps">{STEPS.map((s, i) => <div key={s} className={`step${i === at ? ' on' : i < at ? ' done' : ''}`}><span className="n">{i < at ? '✓' : i + 1}</span>{s}</div>)}</div>;
+  return <div className="steps">{STEPS.map((s, i) => <div key={s} className={`wiz-step${i === at ? ' on' : i < at ? ' done' : ''}`}><span className="n">{i < at ? '✓' : i + 1}</span>{s}</div>)}</div>;
 }
 
 function Stat({ k, v, tone }: { k: string; v: number | string; tone?: 'good' | 'bad' | 'warn' }) {
