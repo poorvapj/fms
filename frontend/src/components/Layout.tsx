@@ -38,7 +38,7 @@ export function Layout() {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark"><Icon name="wrench" size={16} /></span>
-          <div>FMS Operations<small>Job card management</small></div>
+          <div>Job Card Management</div>
         </div>
         <nav className="nav">
           {SECTIONS.map((s) => {

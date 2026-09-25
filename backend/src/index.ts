@@ -49,7 +49,7 @@ app.use('/api', api);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
 // The backend is API-only; the web UI is the separate frontend project.
-app.get('/', (_req, res) => res.json({ service: 'FMS Operations API', env: config.env, api: '/api', frontend: config.frontendUrl }));
+app.get('/', (_req, res) => res.json({ service: 'Job Card Management API', env: config.env, api: '/api', frontend: config.frontendUrl }));
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, details: err.details });
@@ -63,6 +63,6 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`FMS Operations API [${config.env.toUpperCase()}] listening on http://localhost:${config.port}  (frontend: ${config.frontendUrl})`);
+  console.log(`Job Card Management API [${config.env.toUpperCase()}] listening on http://localhost:${config.port}  (frontend: ${config.frontendUrl})`);
   console.log(`MongoDB database: ${config.mongoDb}`);
 });

@@ -107,7 +107,7 @@ export function ImportWizard() {
 
   return (
     <>
-      <PageHead title="FMS Import" sub="Bring the legacy FMS sheet (TSV/CSV export) into FMS Operations without losing history"
+      <PageHead title="FMS Import" sub="Bring the legacy FMS sheet (TSV/CSV export) into Job Card Management without losing history"
         actions={<Link className="btn" to="/import/history"><Icon name="history" size={14} />Import history</Link>} />
       <Steps at={step} />
       <ErrorBox error={error} />

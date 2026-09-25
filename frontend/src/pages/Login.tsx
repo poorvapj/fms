@@ -34,7 +34,7 @@ export function Login() {
     <div className="public-wrap">
       <form className="card login-card" onSubmit={submit}>
         <div className="card-body stack">
-          <div className="public-brand" style={{ margin: 0 }}><span className="brand-mark"><Icon name="wrench" size={16} /></span>FMS Operations</div>
+          <div className="public-brand" style={{ margin: 0 }}><span className="brand-mark"><Icon name="wrench" size={16} /></span>Job Card Management</div>
           {env === 'local' && <span className="env-badge login-env">LOCAL – test data</span>}
           <div className="muted">Sign in to manage job cards.</div>
           <Field label="Email or username"><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" /></Field>

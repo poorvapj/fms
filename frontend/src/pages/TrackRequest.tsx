@@ -17,7 +17,7 @@ export function TrackRequest() {
   return (
     <div className="public-wrap">
       <div className="public-card">
-        <div className="public-brand"><span className="brand-mark"><Icon name="wrench" size={16} /></span>FMS Operations — Job Card Status</div>
+        <div className="public-brand"><span className="brand-mark"><Icon name="wrench" size={16} /></span>Job Card Management — Status</div>
         {loading && <Loading />}
         <ErrorBox error={error} />
         {data && (
