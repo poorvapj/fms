@@ -115,6 +115,7 @@ function StageDetail({ d, stageKey, onEdit, canEdit }: { d: Detail; stageKey: st
         <span className="tl-title">{s.name}</span>
         {s.optional && <span className="badge inferred">optional</span>}
         <StageStatusBadge status={s.status} late={late} />
+        {s.attention && <span className="badge cancelled"><Icon name="alert" size={12} />Attention</span>}
         {s.decision && <span className={`badge ${s.decision === 'approved' ? 'closed' : 'cancelled'}`}>{cap(s.decision)}</span>}
         {s.source === 'fms_import' && <span className="badge src">FMS</span>}
         <span className="grow" />
@@ -133,7 +134,9 @@ function StageDetail({ d, stageKey, onEdit, canEdit }: { d: Detail; stageKey: st
       )}
       {((s.status !== 'skipped' && s.comments) || ev.length > 0 || s.legacy) && (
         <div className="tl-extra">
-          {s.status !== 'skipped' && s.comments && <div><Icon name="message" size={13} /> {s.comments}</div>}
+          {s.status !== 'skipped' && s.comments && (
+            <div className={s.attention ? 'danger-text' : undefined}><Icon name={s.attention ? 'alert' : 'message'} size={13} /> {s.comments}</div>
+          )}
           <Evidence items={ev} />
           {s.legacy && (
             <div className="muted small">

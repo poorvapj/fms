@@ -18,6 +18,8 @@ export interface StageDoc {
   engineer_id: number | null;
   decision: string | null;
   comments: string | null;
+  /** Set when an engineer reports a problem (e.g. "No" on the Slack site-visit prompt) — shows a red flag until the stage is actually completed. */
+  attention: boolean;
   planned_inferred: boolean;
   actual_inferred: boolean;
   source: 'ui' | 'fms_import' | 'system' | 'public';
@@ -31,7 +33,7 @@ export type RequestDoc = Doc & { _id: number; stages: StageDoc[] };
 export function blankStage(key: StageKey, seq: number, now: string): StageDoc {
   return {
     stage_key: key, seq, status: 'pending', planned_at: null, actual_at: null, delay_minutes: null, responsible_role: null,
-    responsible_name: null, responsible_user_id: null, engineer_id: null, decision: null, comments: null,
+    responsible_name: null, responsible_user_id: null, engineer_id: null, decision: null, comments: null, attention: false,
     planned_inferred: false, actual_inferred: false, source: 'ui', legacy: null, updated_by: null, updated_at: now,
   };
 }

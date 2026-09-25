@@ -114,7 +114,7 @@ export async function completeStage(requestId: number, key: StageKey, body: any,
   Object.assign(stage, {
     status: 'completed', actual_at: actual, delay_minutes: diffMinutes(actual, stage.planned_at), responsible_user_id: user.id,
     responsible_name: user.name, engineer_id: engineerId ?? stage.engineer_id, decision: def.decision ? 'approved' : null,
-    comments: comments ?? stage.comments, source: 'ui', updated_by: user.id, updated_at: now,
+    comments: comments ?? stage.comments, attention: false, source: 'ui', updated_by: user.id, updated_at: now,
   });
   refreshState(r);
   await saveRequest(r);

@@ -232,6 +232,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .badge.p-low { background: var(--muted-bg); color: var(--text-3); }
 .badge.src { background: transparent; border: 1px solid var(--border-strong); color: var(--text-2); font-weight: 500; }
 .badge.inferred { background: transparent; border: 1px dashed var(--border-strong); color: var(--text-3); font-weight: 500; height: 18px; font-size: 11px; }
+.danger-text { color: var(--bad); font-weight: 500; }
 
 /* ---------- alerts ---------- */
 .alert { padding: 10px 14px; border-radius: var(--radius); border: 1px solid; font-size: 13.5px; display: flex; gap: 10px; align-items: flex-start; }

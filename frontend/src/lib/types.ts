@@ -92,6 +92,7 @@ export interface Stage {
   engineer_name: string | null;
   decision: string | null;
   comments: string | null;
+  attention: boolean;
   planned_inferred: boolean;
   actual_inferred: boolean;
   source: string;

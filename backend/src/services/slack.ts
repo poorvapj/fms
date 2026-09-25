@@ -5,7 +5,8 @@ import { masterNames } from './masters.ts';
 import { completeStage } from './stages.ts';
 import { logEvent } from './events.ts';
 import { loadRequest } from './requests.ts';
-import type { RequestDoc } from './workflowEngine.ts';
+import { nowLocal } from '../utils/dates.ts';
+import { refreshState, saveRequest, stageOf, type RequestDoc } from './workflowEngine.ts';
 
 const SLACK_API = 'https://slack.com/api';
 
@@ -121,6 +122,10 @@ async function handleNoSubmit(payload: any) {
   const reason = payload.view.state.values.reason_block.reason.value as string;
   const r = await loadRequest(requestId);
   const eng = r.site_engineer_id ? await col.engineers().findOne({ _id: r.site_engineer_id }) : null;
+  const stage = stageOf(r, 'site_visit');
+  Object.assign(stage, { attention: true, comments: `Not visited (Slack): ${reason}`, updated_at: nowLocal() });
+  refreshState(r);
+  await saveRequest(r);
   await logEvent(requestId, 'comment', `Site visit not done (via Slack) — ${reason}`, { stageKey: 'site_visit', userName: eng?.name ?? 'Slack' });
   await postToUrl(responseUrl, { replace_original: true, text: `❌ Marked *Site Visit* not done for ${r.request_no}.\nReason: ${reason}` });
 }
