@@ -302,7 +302,7 @@ export function RequestDetail() {
   const { data, error, loading, reload, setData } = useLoad(() => api.get<Detail>(`/requests/${id}`), [id]);
   const [editing, setEditing] = useState<Stage | null>(null);
   const [tab, setTab] = useState<TabKey>('overview');
-  const [showRequester, setShowRequester] = useState(true);
+  const [showRequester, setShowRequester] = useState(false);
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;

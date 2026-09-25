@@ -1,24 +1,33 @@
 import { Router, type Request } from 'express';
 import { login, logout, requireAuth, requirePermission, userPermissions } from '../auth/auth.ts';
 import { config } from '../config.ts';
+import { col } from '../db/mongo.ts';
 import { ROLE_LABELS, ROLES } from '../domain/permissions.ts';
 import { PRIORITIES, REQUEST_STATUSES, WORK_TYPES, type StageKey } from '../domain/workflow.ts';
 import { commitImport, getBatch, listBatches, preview, rollbackBatch, saveUpload, validateImport } from '../import/importService.ts';
 import { addAttachment, deleteAttachment, getAttachmentFile } from '../services/attachments.ts';
 import { coordinatorQueue, dashboard, myJobs } from '../services/dashboard.ts';
 import {
-  createMaster, isMasterKind, listClosureCategories, listMaster, mergeMaster, saveClosureCategory, updateMaster,
+  createMaster, isMasterKind, listClosureCategories, listMaster, masterNames, mergeMaster, saveClosureCategory, updateMaster,
 } from '../services/masters.ts';
 import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../services/publicService.ts';
-import { REPORTS, runReport } from '../services/reports.ts';
-import { createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
+import { legacyPendingSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
+import { buildFilter, createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
   addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, holdRequest, reopenRequest, resumeRequest, skipStage,
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
+import { nowLocal } from '../utils/dates.ts';
 import { badRequest, notFound, toCsv } from '../utils/http.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
+
+/** True for the "Open" chip/view's exact filter combo — nothing else narrowed. */
+function isOpenOnlyFilter(q: Record<string, any>): boolean {
+  const statuses = String(q.status ?? '').split(',').map((s) => s.trim()).filter(Boolean).sort();
+  const rest = ['stage', 'overdue', 'priority', 'engineer_id', 'source', 'q', 'from', 'to', 'property_id', 'category_id'];
+  return statuses.join(',') === 'active,on_hold' && rest.every((k) => !q[k]);
+}
 
 export const api = Router();
 
@@ -87,6 +96,17 @@ api.get('/coordinator/queue', requirePermission('request.manage'), async (req, r
 // ---------------------------------------------------------------- job cards (/requests)
 api.get('/requests', async (req, res) => { res.json(await listRequests(req.query, req.user!)); });
 api.get('/requests/export.csv', async (req, res) => {
+  if (isOpenOnlyFilter(req.query)) {
+    const { filter } = buildFilter(req.query, req.user!);
+    const [rows, names] = await Promise.all([
+      col.requests().find(filter, { projection: REPORT_PROJECTION }).sort({ requested_at: 1 }).toArray(),
+      masterNames(),
+    ]);
+    const section = await legacyPendingSection(rows, names, nowLocal());
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="open-job-cards.csv"');
+    return void res.send(toCsv(section.columns, section.rows));
+  }
   const rows = await exportRequests(req.query, req.user!);
   const cols = [
     { key: 'request_no', label: 'Job Card' }, { key: 'requested_at', label: 'Raised' }, { key: 'property_name', label: 'Property' },
