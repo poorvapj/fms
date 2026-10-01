@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { Icon } from './Icon';
 
-interface NavItem { to: string; label: string; icon: string; perm?: string; end?: boolean }
+interface NavItem { to: string; label: string; icon: string; perm?: string; end?: boolean; adminOnly?: boolean }
 
 const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
@@ -19,7 +19,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Admin',
     items: [
-      { to: '/masters', label: 'Masters', icon: 'building', perm: 'masters.manage' },
+      { to: '/masters', label: 'Masters', icon: 'building', perm: 'masters.manage', adminOnly: true },
       { to: '/users', label: 'Users', icon: 'users', perm: 'users.manage' },
     ],
   },
@@ -42,7 +42,7 @@ export function Layout() {
         </div>
         <nav className="nav">
           {SECTIONS.map((s) => {
-            const items = s.items.filter((i) => !i.perm || can(i.perm));
+            const items = s.items.filter((i) => (!i.perm || can(i.perm)) && (!i.adminOnly || user?.role === 'admin'));
             if (!items.length) return null;
             return (
               <div key={s.title}>

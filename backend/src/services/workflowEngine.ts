@@ -2,6 +2,7 @@ import { col, type Doc } from '../db/mongo.ts';
 import { computePlanned, deriveState, type StageKey, type StageStatus } from '../domain/workflow.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { conflict } from '../utils/http.ts';
+import { holidayChecker } from './holidays.ts';
 import { stageDef, stageDefs } from './stageDefs.ts';
 
 /** A workflow stage embedded in a job card document (`requests.stages[]`). */
@@ -39,8 +40,9 @@ export function blankStage(key: StageKey, seq: number, now: string): StageDoc {
 }
 
 /** Full set of stage rows for a new job card raised in the app / public form. */
-export function newStages(requestedAt: string, userId: number | null, requesterName: string | null): StageDoc[] {
+export function newStages(requestedAt: string, userId: number | null, requesterName: string | null, propertyId: number | null = null): StageDoc[] {
   const now = nowLocal();
+  const isHoliday = holidayChecker(propertyId);
   return stageDefs().map((d) => {
     const s = blankStage(d.key, d.seq, now);
     s.responsible_role = d.responsibleLabel;
@@ -48,7 +50,7 @@ export function newStages(requestedAt: string, userId: number | null, requesterN
     if (d.key === 'created') {
       Object.assign(s, { status: 'completed', planned_at: requestedAt, actual_at: requestedAt, delay_minutes: 0, responsible_name: requesterName, responsible_user_id: userId });
     } else if (d.sla.type !== 'none' && d.sla.anchor === 'request') {
-      s.planned_at = computePlanned(d.sla, requestedAt, null);
+      s.planned_at = computePlanned(d.sla, requestedAt, null, true, isHoliday);
     }
     return s;
   });
@@ -72,7 +74,8 @@ export function refreshState(doc: RequestDoc, opts: { rollForward?: boolean } = 
     const next = stages.find((s) => s.status === 'pending');
     if (next) {
       const prev = [...stages].reverse().find((s) => s.seq < next.seq && s.status === 'completed' && s.actual_at);
-      next.planned_at = next.planned_at ?? computePlanned(stageDef(next.stage_key).sla, doc.requested_at, prev?.actual_at ?? null, opts.rollForward ?? true);
+      const isHoliday = holidayChecker(doc.property_id ?? null);
+      next.planned_at = next.planned_at ?? computePlanned(stageDef(next.stage_key).sla, doc.requested_at, prev?.actual_at ?? null, opts.rollForward ?? true, isHoliday);
       next.status = 'active';
     }
   }

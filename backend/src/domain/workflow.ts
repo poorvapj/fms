@@ -93,7 +93,13 @@ export type Priority = (typeof PRIORITIES)[number];
  * @param rollForward For live records: a "same day" deadline already passed on the anchor day moves to the next working day.
  *                    The legacy sheet did not do this, so the importer passes false.
  */
-export function computePlanned(rule: SlaRule, requestAt: string | null, previousAt: string | null, rollForward = true): string | null {
+export function computePlanned(
+  rule: SlaRule,
+  requestAt: string | null,
+  previousAt: string | null,
+  rollForward = true,
+  isHoliday?: (ms: number) => boolean,
+): string | null {
   if (rule.type === 'none') return null;
   const anchor = toMs(rule.anchor === 'request' ? requestAt : previousAt ?? requestAt);
   if (anchor === null) return null;
@@ -101,16 +107,16 @@ export function computePlanned(rule: SlaRule, requestAt: string | null, previous
     case 'add_hours':
       return formatMs(anchor + rule.hours * 3600000);
     case 'next_day_at':
-      return formatMs(atTime(nextWorkingDay(anchor, WEEKLY_OFF), rule.time));
+      return formatMs(atTime(nextWorkingDay(anchor, WEEKLY_OFF, isHoliday), rule.time));
     case 'same_day_at': {
       let day = anchor;
-      if (!isWorkingDay(day, WEEKLY_OFF)) day = nextWorkingDay(day, WEEKLY_OFF);
+      if (!isWorkingDay(day, WEEKLY_OFF, isHoliday)) day = nextWorkingDay(day, WEEKLY_OFF, isHoliday);
       let t = atTime(day, rule.time);
-      if (rollForward && t < anchor) t = atTime(nextWorkingDay(day, WEEKLY_OFF), rule.time);
+      if (rollForward && t < anchor) t = atTime(nextWorkingDay(day, WEEKLY_OFF, isHoliday), rule.time);
       return formatMs(t);
     }
     case 'add_working_days':
-      return formatMs(addWorkingDays(anchor, rule.days, WEEKLY_OFF));
+      return formatMs(addWorkingDays(anchor, rule.days, WEEKLY_OFF, isHoliday));
   }
 }
 

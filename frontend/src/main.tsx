@@ -27,8 +27,9 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Guard({ perm, children }: { perm: string; children: ReactNode }) {
-  const { can } = useAuth();
+function Guard({ perm, children, adminOnly }: { perm: string; children: ReactNode; adminOnly?: boolean }) {
+  const { can, user } = useAuth();
+  if (adminOnly && user?.role !== 'admin') return <div className="alert warn">This page is available to administrators only.</div>;
   return can(perm) ? <>{children}</> : <div className="alert warn">You do not have access to this page.</div>;
 }
 
@@ -61,7 +62,7 @@ function App() {
         <Route path="my-jobs" element={<MyJobs />} />
         <Route path="reports" element={<Guard perm="reports.view"><Reports /></Guard>} />
         <Route path="reports/:key" element={<Guard perm="reports.view"><Reports /></Guard>} />
-        <Route path="masters" element={<Guard perm="masters.manage"><Masters /></Guard>} />
+        <Route path="masters" element={<Guard perm="masters.manage" adminOnly><Masters /></Guard>} />
         <Route path="import" element={<Guard perm="import.run"><ImportWizard /></Guard>} />
         <Route path="import/history" element={<Guard perm="import.run"><ImportHistory /></Guard>} />
         <Route path="import/:id" element={<Guard perm="import.run"><ImportBatch /></Guard>} />

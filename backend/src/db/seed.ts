@@ -1,7 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import { hashPassword } from '../auth/auth.ts';
 import { DEFAULT_SORT, formSortOrder } from '../domain/formOrder.ts';
+import { loadEscalationRules } from '../services/escalationRules.ts';
+import { loadHolidays } from '../services/holidays.ts';
 import { ensureMasterByName } from '../services/masters.ts';
+import { seedReasonCodes } from '../services/reasonCodes.ts';
 import { loadStageDefs } from '../services/stageDefs.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { col, connect, disconnect, masterCol, nextId } from './mongo.ts';
@@ -11,6 +14,9 @@ const CLOSURE_CATEGORIES = ['Work Done', 'Service / Repair Complaint', 'Wrong Co
 /** Idempotent base data required for the app to run. */
 export async function ensureBaseData() {
   await loadStageDefs();
+  await loadHolidays();
+  await loadEscalationRules();
+  await seedReasonCodes();
   for (const [i, name] of CLOSURE_CATEGORIES.entries()) {
     if (!(await col.closureCategories().findOne({ name }))) {
       await col.closureCategories().insertOne({ _id: await nextId('closure_categories'), name, sort: i, active: 1 });

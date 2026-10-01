@@ -69,8 +69,8 @@ export function diffMinutes(later: string | null, earlier: string | null): numbe
 
 const DAY = 86400000;
 
-export function isWorkingDay(ms: number, weeklyOff: number[]): boolean {
-  return !weeklyOff.includes(new Date(ms).getUTCDay());
+export function isWorkingDay(ms: number, weeklyOff: number[], isHoliday?: (ms: number) => boolean): boolean {
+  return !weeklyOff.includes(new Date(ms).getUTCDay()) && !(isHoliday && isHoliday(ms));
 }
 
 export function startOfDay(ms: number): number {
@@ -82,15 +82,15 @@ export function atTime(dayMs: number, hhmm: string): number {
   return startOfDay(dayMs) + (h * 60 + (m || 0)) * 60000;
 }
 
-export function nextWorkingDay(ms: number, weeklyOff: number[]): number {
+export function nextWorkingDay(ms: number, weeklyOff: number[], isHoliday?: (ms: number) => boolean): number {
   let d = ms + DAY;
-  while (!isWorkingDay(d, weeklyOff)) d += DAY;
+  while (!isWorkingDay(d, weeklyOff, isHoliday)) d += DAY;
   return d;
 }
 
-export function addWorkingDays(ms: number, days: number, weeklyOff: number[]): number {
+export function addWorkingDays(ms: number, days: number, weeklyOff: number[], isHoliday?: (ms: number) => boolean): number {
   let d = ms;
-  for (let i = 0; i < days; i++) d = nextWorkingDay(d, weeklyOff);
+  for (let i = 0; i < days; i++) d = nextWorkingDay(d, weeklyOff, isHoliday);
   return d;
 }
 

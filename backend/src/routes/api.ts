@@ -7,9 +7,13 @@ import { PRIORITIES, REQUEST_STATUSES, WORK_TYPES, type StageKey } from '../doma
 import { commitImport, getBatch, listBatches, preview, rollbackBatch, saveUpload, validateImport } from '../import/importService.ts';
 import { addAttachment, deleteAttachment, getAttachmentFile } from '../services/attachments.ts';
 import { coordinatorQueue, dashboard, myJobs } from '../services/dashboard.ts';
+import { createEscalationRule, deleteEscalationRule, listEscalationRules, updateEscalationRule } from '../services/escalationRules.ts';
+import { createHoliday, deleteHoliday, listHolidays } from '../services/holidays.ts';
 import {
   createMaster, isMasterKind, listClosureCategories, listMaster, masterNames, mergeMaster, saveClosureCategory, updateMaster,
 } from '../services/masters.ts';
+import { createReasonCode, listReasonCodes, updateReasonCode } from '../services/reasonCodes.ts';
+import { createSlaRule, deleteSlaRule, listSlaRules } from '../services/slaRules.ts';
 import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../services/publicService.ts';
 import { legacyPendingSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
 import { buildFilter, createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
@@ -162,6 +166,27 @@ api.get('/attachments/:id/file', async (req, res, next) => {
   f.stream.on('error', () => (res.headersSent ? res.end() : next(notFound('File')))).pipe(res);
 });
 api.delete('/attachments/:id', async (req, res) => { await deleteAttachment(id(req), req.user!); res.json({ ok: true }); });
+
+// ---------------------------------------------------------------- holiday calendar (SLA working-day exclusions)
+api.get('/masters/holidays', async (_req, res) => { res.json(await listHolidays()); });
+api.post('/masters/holidays', requirePermission('masters.manage'), async (req, res) => { res.status(201).json(await createHoliday(req.body ?? {})); });
+api.delete('/masters/holidays/:id', requirePermission('masters.manage'), async (req, res) => { await deleteHoliday(id(req)); res.json({ ok: true }); });
+
+// ---------------------------------------------------------------- SLA rules (whole-job scoped override layer; CRUD only — see services/slaRules.ts TODO)
+api.get('/masters/sla-rules', requirePermission('masters.manage'), async (_req, res) => { res.json(await listSlaRules()); });
+api.post('/masters/sla-rules', requirePermission('masters.manage'), async (req, res) => { res.status(201).json(await createSlaRule(req.body ?? {})); });
+api.delete('/masters/sla-rules/:id', requirePermission('masters.manage'), async (req, res) => { await deleteSlaRule(id(req)); res.json({ ok: true }); });
+
+// ---------------------------------------------------------------- escalation rules (wired into coordinator queue severity/thresholds)
+api.get('/masters/escalation-rules', requirePermission('masters.manage'), async (_req, res) => { res.json(await listEscalationRules()); });
+api.post('/masters/escalation-rules', requirePermission('masters.manage'), async (req, res) => { res.status(201).json(await createEscalationRule(req.body ?? {})); });
+api.patch('/masters/escalation-rules/:id', requirePermission('masters.manage'), async (req, res) => { await updateEscalationRule(id(req), req.body ?? {}); res.json({ ok: true }); });
+api.delete('/masters/escalation-rules/:id', requirePermission('masters.manage'), async (req, res) => { await deleteEscalationRule(id(req)); res.json({ ok: true }); });
+
+// ---------------------------------------------------------------- reason codes (hold / cancel / reopen quick-pick; closure already uses closure_categories)
+api.get('/masters/reason-codes', async (req, res) => { res.json(await listReasonCodes(req.query.kind as string | undefined)); });
+api.post('/masters/reason-codes', requirePermission('masters.manage'), async (req, res) => { res.status(201).json(await createReasonCode(req.body ?? {})); });
+api.patch('/masters/reason-codes/:id', requirePermission('masters.manage'), async (req, res) => { await updateReasonCode(id(req), req.body ?? {}); res.json({ ok: true }); });
 
 // ---------------------------------------------------------------- masters
 api.get('/masters/:kind', async (req, res) => {

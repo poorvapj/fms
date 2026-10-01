@@ -57,6 +57,10 @@ export const col = {
   batches: () => db().collection<any>('import_batches'),
   issues: () => db().collection<any>('import_issues'),
   importUploads: () => db().collection<any>('import_uploads'),
+  holidays: () => db().collection<any>('holidays'),
+  slaRules: () => db().collection<any>('sla_rules'),
+  escalationRules: () => db().collection<any>('escalation_rules'),
+  reasonCodes: () => db().collection<any>('reason_codes'),
 };
 
 export type MasterTable = 'properties' | 'work_categories' | 'engineers';
@@ -106,6 +110,8 @@ async function ensureIndexes(d: Db) {
     d.collection('import_issues').createIndex({ batch_id: 1, row_no: 1 }),
     // Wizard uploads are temporary: removed automatically after a day.
     d.collection('import_uploads').createIndex({ created_at_date: 1 }, { expireAfterSeconds: 86400 }),
+    d.collection('holidays').createIndex({ date: 1, property_id: 1 }),
+    d.collection('reason_codes').createIndex({ kind: 1, code: 1 }, { unique: true }),
   ]);
 }
 

@@ -275,7 +275,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
       cancelled_at: null, cancel_reason: null, completed_at: null, closed_at: null, closure_category: null, closure_note: null,
       verified_by_name: null, public_token: token, requester_ip: opts.ip ?? null, import_batch_id: null, import_row_no: null,
       modified_in_app: false, version: 1, created_at: requestedAt, updated_at: requestedAt,
-      stages: newStages(requestedAt, user?.id ?? null, requesterName),
+      stages: newStages(requestedAt, user?.id ?? null, requesterName, propertyId),
     };
     refreshState(doc);
     await col.requests().insertOne(doc);

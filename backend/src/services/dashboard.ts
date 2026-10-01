@@ -5,6 +5,7 @@ import type { Role } from '../domain/permissions.ts';
 import type { StageKey } from '../domain/workflow.ts';
 import { diffMinutes, formatMs, nowLocal, todayLocal, toMs } from '../utils/dates.ts';
 import { buildFilter, findRows, isOverdue, LIVE_STATUSES, scopeFilter } from './requests.ts';
+import { thresholdHoursFor } from './escalationRules.ts';
 import { masterNames } from './masters.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 
@@ -143,7 +144,10 @@ export async function coordinatorQueue(query: Record<string, any>, user: AuthUse
   for (const r of rows) {
     const stage = defs.get(r.current_stage_key);
     const late = r.current_stage_planned_at && r.current_stage_planned_at < now ? diffMinutes(now, r.current_stage_planned_at) : null;
-    const sev = (l: number | null, base: QueueItem['severity'] = 'medium'): QueueItem['severity'] => (l && l > 48 * 60 ? 'high' : l && l > 0 ? (base === 'low' ? 'medium' : base) : base);
+    // High-severity threshold comes from the configurable APPROVAL_OVERDUE escalation rule
+    // (Masters → Escalation Rules), falling back to the documented 48h default until one is set.
+    const highThresholdMin = thresholdHoursFor('APPROVAL_OVERDUE') * 60;
+    const sev = (l: number | null, base: QueueItem['severity'] = 'medium'): QueueItem['severity'] => (l && l > highThresholdMin ? 'high' : l && l > 0 ? (base === 'low' ? 'medium' : base) : base);
     const push = (kind: string, severity: QueueItem['severity'], title: string, what: string, why: string, owner: string, action: string) =>
       items.push({ id: r._id, job_no: r.request_no, kind, severity, title: `${r.request_no} ${title}`, what, why, owner, late_minutes: late, action });
     const engineerName = names.engineers.get(r.assigned_engineer_id) ?? null;
@@ -152,12 +156,14 @@ export async function coordinatorQueue(query: Record<string, any>, user: AuthUse
     if (r.status === 'on_hold') {
       const heldDays = r.held_at ? (diffMinutes(now, r.held_at) ?? 0) / 1440 : 0;
       const rejected = (r.stages as { stage_key: string; status: string }[]).find((s) => s.status === 'rejected')?.stage_key;
+      // Stale-hold threshold comes from the configurable HOLD_STALE escalation rule (default 72h / 3 days).
+      const staleDays = thresholdHoursFor('HOLD_STALE') / 24;
       if (rejected) {
         push('rejected', 'high', `was rejected at ${stageName(rejected)}`, `The ${stageName(rejected)} decision was "rejected": ${r.hold_reason ?? ''}`,
           'A rejected approval puts the job on hold until the coordinator resolves it.', 'Process Coordinator', 'Resolve the objection, then Resume — or Cancel the job card.');
-      } else if (heldDays >= 3) {
-        push('hold', heldDays >= 7 ? 'high' : 'medium', `on hold for ${Math.floor(heldDays)} days`, `Job was put on hold: ${r.hold_reason ?? 'no reason given'}`,
-          'On-hold jobs older than 3 days need a review.', 'Process Coordinator', 'Review the hold reason and Resume or Cancel.');
+      } else if (heldDays >= staleDays) {
+        push('hold', heldDays >= staleDays * 2.33 ? 'high' : 'medium', `on hold for ${Math.floor(heldDays)} days`, `Job was put on hold: ${r.hold_reason ?? 'no reason given'}`,
+          `On-hold jobs older than ${staleDays} day(s) need a review.`, 'Process Coordinator', 'Review the hold reason and Resume or Cancel.');
       }
       continue;
     }
