@@ -112,7 +112,7 @@ function OrgWork() {
 
 /* ------------------------------------------------------------------ Holiday Calendar (tab 2) */
 
-interface Holiday { id: number; date: string; name: string; property_id: number | null; recurring: boolean }
+interface Holiday { id: number; date: string; name: string; property_id: number | null; recurring: boolean; source?: 'manual' | 'google' }
 
 function HolidayCalendar() {
   const meta = useMeta();
@@ -120,6 +120,16 @@ function HolidayCalendar() {
   const [f, setF] = useState({ date: '', name: '', property_id: '', recurring: false });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const sync = async () => {
+    setSyncing(true); setSyncMsg(null); setErr(null);
+    try {
+      const r = await api.post<{ fetched: number; inserted: number; skipped: number }>('/masters/holidays/sync', {});
+      setSyncMsg(`Synced: ${r.inserted} new holiday(s) added, ${r.skipped} already present.`);
+      reload();
+    } catch (e) { setErr(errorText(e)); } finally { setSyncing(false); }
+  };
   const add = async () => {
     if (!f.date || !f.name.trim()) return;
     setBusy(true);
@@ -133,8 +143,16 @@ function HolidayCalendar() {
   const rows = [...(data ?? [])].sort((a, b) => (a.recurring ? a.date.slice(5) : a.date).localeCompare(b.recurring ? b.date.slice(5) : b.date));
   return (
     <div className="card" style={{ maxWidth: 720 }}>
-      <div className="card-head"><h2>Holiday calendar</h2><span className="muted small">Holidays are excluded from working-day SLA calculations (next working day / add working days / the triage deadline)</span></div>
+      <div className="card-head">
+        <h2>Holiday calendar</h2>
+        <span className="muted small">Holidays are excluded from working-day SLA calculations (next working day / add working days / the triage deadline)</span>
+      </div>
       <div className="card-body stack">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <span className="muted small">Pulls from Google's public "Holidays in India" calendar — safe to re-run, never touches holidays you added by hand.</span>
+          <button className="btn sm" disabled={syncing} onClick={sync}>{syncing ? 'Syncing…' : 'Sync from Google'}</button>
+        </div>
+        {syncMsg && <div className="muted small">{syncMsg}</div>}
         <div className="form-grid">
           <Field label="Date" required><input type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
           <Field label="Name" required><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
@@ -157,7 +175,7 @@ function HolidayCalendar() {
           {rows.map((h) => (
             <div key={h.id} className="row" style={{ justifyContent: 'space-between' }}>
               <span>
-                <b>{h.name}</b> — {h.date} {h.recurring && <span className="badge">Yearly</span>}{' '}
+                <b>{h.name}</b> — {h.date} {h.recurring && <span className="badge">Yearly</span>} {h.source === 'google' && <span className="badge closed">Google</span>}{' '}
                 <span className="muted small">· {h.property_id ? (meta.properties.find((p) => p.id === h.property_id)?.name ?? `#${h.property_id}`) : 'All projects'}</span>
               </span>
               <button className="btn sm ghost" onClick={() => del(h.id)}><Icon name="x" size={13} />Remove</button>

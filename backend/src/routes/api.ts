@@ -8,7 +8,7 @@ import { commitImport, getBatch, listBatches, preview, rollbackBatch, saveUpload
 import { addAttachment, deleteAttachment, getAttachmentFile } from '../services/attachments.ts';
 import { coordinatorQueue, dashboard, myJobs } from '../services/dashboard.ts';
 import { createEscalationRule, deleteEscalationRule, listEscalationRules, updateEscalationRule } from '../services/escalationRules.ts';
-import { createHoliday, deleteHoliday, listHolidays } from '../services/holidays.ts';
+import { createHoliday, deleteHoliday, listHolidays, syncGoogleHolidays } from '../services/holidays.ts';
 import {
   createMaster, isMasterKind, listClosureCategories, listMaster, masterNames, mergeMaster, saveClosureCategory, updateMaster,
 } from '../services/masters.ts';
@@ -171,6 +171,7 @@ api.delete('/attachments/:id', async (req, res) => { await deleteAttachment(id(r
 api.get('/masters/holidays', async (_req, res) => { res.json(await listHolidays()); });
 api.post('/masters/holidays', requirePermission('masters.manage'), async (req, res) => { res.status(201).json(await createHoliday(req.body ?? {})); });
 api.delete('/masters/holidays/:id', requirePermission('masters.manage'), async (req, res) => { await deleteHoliday(id(req)); res.json({ ok: true }); });
+api.post('/masters/holidays/sync', requirePermission('masters.manage'), async (_req, res) => { res.json(await syncGoogleHolidays()); });
 
 // ---------------------------------------------------------------- SLA rules (whole-job scoped override layer; CRUD only — see services/slaRules.ts TODO)
 api.get('/masters/sla-rules', requirePermission('masters.manage'), async (_req, res) => { res.json(await listSlaRules()); });
