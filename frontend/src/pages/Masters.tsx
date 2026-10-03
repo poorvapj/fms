@@ -171,7 +171,7 @@ function HolidayCalendar() {
         </div>
         <div><button className="btn primary" disabled={busy || !f.date || !f.name.trim()} onClick={add}>Add Holiday</button></div>
         <ErrorBox error={error ?? err} />
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="stack" style={{ gap: 6, maxHeight: 380, overflowY: 'auto', paddingRight: 4 }}>
           {rows.map((h) => (
             <div key={h.id} className="row" style={{ justifyContent: 'space-between' }}>
               <span>
