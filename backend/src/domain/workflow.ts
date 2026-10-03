@@ -104,8 +104,11 @@ export function computePlanned(
   const anchor = toMs(rule.anchor === 'request' ? requestAt : previousAt ?? requestAt);
   if (anchor === null) return null;
   switch (rule.type) {
-    case 'add_hours':
-      return formatMs(anchor + rule.hours * 3600000);
+    case 'add_hours': {
+      const t = anchor + rule.hours * 3600000;
+      // A deadline landing on a holiday/weekly-off day rolls to the next working day's start instead.
+      return formatMs(isWorkingDay(t, WEEKLY_OFF, isHoliday) ? t : atTime(nextWorkingDay(t, WEEKLY_OFF, isHoliday), '10:00'));
+    }
     case 'next_day_at':
       return formatMs(atTime(nextWorkingDay(anchor, WEEKLY_OFF, isHoliday), rule.time));
     case 'same_day_at': {

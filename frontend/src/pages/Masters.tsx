@@ -112,28 +112,28 @@ function OrgWork() {
 
 /* ------------------------------------------------------------------ Holiday Calendar (tab 2) */
 
-interface Holiday { id: number; date: string; name: string; property_id: number | null }
+interface Holiday { id: number; date: string; name: string; property_id: number | null; recurring: boolean }
 
 function HolidayCalendar() {
   const meta = useMeta();
   const { data, error, reload } = useLoad(() => api.get<Holiday[]>('/masters/holidays'), []);
-  const [f, setF] = useState({ date: '', name: '', property_id: '' });
+  const [f, setF] = useState({ date: '', name: '', property_id: '', recurring: false });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const add = async () => {
     if (!f.date || !f.name.trim()) return;
     setBusy(true);
     try {
-      await api.post('/masters/holidays', { date: f.date, name: f.name.trim(), property_id: f.property_id ? Number(f.property_id) : null });
-      setF({ date: '', name: '', property_id: '' });
+      await api.post('/masters/holidays', { date: f.date, name: f.name.trim(), property_id: f.property_id ? Number(f.property_id) : null, recurring: f.recurring });
+      setF({ date: '', name: '', property_id: '', recurring: false });
       reload();
     } catch (e) { setErr(errorText(e)); } finally { setBusy(false); }
   };
   const del = async (id: number) => { try { await api.del(`/masters/holidays/${id}`); reload(); } catch (e) { setErr(errorText(e)); } };
-  const rows = [...(data ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+  const rows = [...(data ?? [])].sort((a, b) => (a.recurring ? a.date.slice(5) : a.date).localeCompare(b.recurring ? b.date.slice(5) : b.date));
   return (
     <div className="card" style={{ maxWidth: 720 }}>
-      <div className="card-head"><h2>Holiday calendar</h2><span className="muted small">Holidays are excluded from working-day SLA calculations (next working day / add working days rules)</span></div>
+      <div className="card-head"><h2>Holiday calendar</h2><span className="muted small">Holidays are excluded from working-day SLA calculations (next working day / add working days / the triage deadline)</span></div>
       <div className="card-body stack">
         <div className="form-grid">
           <Field label="Date" required><input type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
@@ -144,13 +144,22 @@ function HolidayCalendar() {
               {meta.properties.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </Field>
+          <Field label="Repeats annually" help="For fixed-date holidays like Independence Day or Diwali — applies every year on this month/day">
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={f.recurring} onChange={(e) => setF({ ...f, recurring: e.target.checked })} />
+              <span className="muted small">Repeat every year</span>
+            </label>
+          </Field>
         </div>
         <div><button className="btn primary" disabled={busy || !f.date || !f.name.trim()} onClick={add}>Add Holiday</button></div>
         <ErrorBox error={error ?? err} />
         <div className="stack" style={{ gap: 6 }}>
           {rows.map((h) => (
             <div key={h.id} className="row" style={{ justifyContent: 'space-between' }}>
-              <span><b>{h.name}</b> — {h.date} <span className="muted small">· {h.property_id ? (meta.properties.find((p) => p.id === h.property_id)?.name ?? `#${h.property_id}`) : 'All projects'}</span></span>
+              <span>
+                <b>{h.name}</b> — {h.date} {h.recurring && <span className="badge">Yearly</span>}{' '}
+                <span className="muted small">· {h.property_id ? (meta.properties.find((p) => p.id === h.property_id)?.name ?? `#${h.property_id}`) : 'All projects'}</span>
+              </span>
               <button className="btn sm ghost" onClick={() => del(h.id)}><Icon name="x" size={13} />Remove</button>
             </div>
           ))}
