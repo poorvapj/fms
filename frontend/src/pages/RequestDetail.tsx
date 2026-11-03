@@ -156,6 +156,121 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
   );
 }
 
+/**
+ * Lets the coordinator/admin act on whichever stage is currently active, right from the app —
+ * the same thing Slack's Yes/No buttons do for Site Visit, generalised to every stage, with a
+ * remarks field always available.
+ */
+function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
+  const meta = useMeta();
+  const stage = d.stages.find((s) => s.status === 'active');
+  const def = meta.stages.find((s) => s.key === stage?.stage_key);
+  const [comments, setComments] = useState('');
+  const [engineerId, setEngineerId] = useState(String(d.request.assigned_engineer_id ?? d.request.site_engineer_id ?? ''));
+  const [closureCategory, setClosureCategory] = useState('');
+  const [evidenceLink, setEvidenceLink] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!stage || !def || stage.stage_key === 'created') return null;
+  const hasEvidence = d.attachments.some((a) => a.stage_key === stage.stage_key);
+  const needsEvidence = def.requires_evidence && !hasEvidence;
+  const needsEngineer = stage.stage_key === 'work_started';
+  const needsClosure = stage.stage_key === 'closed';
+
+  const addEvidence = async () => {
+    setBusy('evidence');
+    setError(null);
+    try { onDone(await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: evidenceLink, stage_key: stage.stage_key })); setEvidenceLink(''); }
+    catch (e) { setError(errorText(e)); } finally { setBusy(null); }
+  };
+
+  const act = async (kind: 'complete' | 'approve' | 'reject' | 'skip') => {
+    setBusy(kind);
+    setError(null);
+    try {
+      let result: Detail;
+      if (kind === 'skip') {
+        result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/skip`, { reason: comments });
+      } else if (kind === 'approve' || kind === 'reject') {
+        result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/decision`, {
+          decision: kind === 'approve' ? 'approved' : 'rejected', comments, engineer_id: engineerId || undefined,
+        });
+      } else {
+        result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/complete`, {
+          comments: comments || undefined,
+          engineer_id: needsEngineer ? (engineerId || undefined) : undefined,
+          closure_category: needsClosure ? closureCategory : undefined,
+          closure_note: needsClosure ? (comments || undefined) : undefined,
+        });
+      }
+      onDone(result);
+      setComments('');
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const rejectNeedsReason = !comments.trim();
+  const skipNeedsReason = !comments.trim();
+  const closedNeedsCategory = needsClosure && !closureCategory;
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-head"><h3>Current Stage — {stage.name}</h3>{stage.attention && <span className="badge cancelled"><Icon name="alert" size={12} />Flagged on Slack</span>}</div>
+      <div className="card-body stack">
+        {stage.attention && stage.comments && <div className="alert warn"><Icon name="alert" />{stage.comments}</div>}
+        <div className="form-grid">
+          {needsEngineer && (
+            <Field label="Engineer who did the work" required>
+              <select className="select" value={engineerId} onChange={(e) => setEngineerId(e.target.value)}>
+                <option value="">Select…</option>{meta.engineers.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {needsClosure && (
+            <Field label="Closure category" required>
+              <select className="select" value={closureCategory} onChange={(e) => setClosureCategory(e.target.value)}>
+                <option value="">Select…</option>{meta.closure_categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Remarks" full required={def.decision}>
+            <textarea className="input" style={{ minHeight: 60 }} placeholder="Notes for this stage (visible in the timeline)…" value={comments} onChange={(e) => setComments(e.target.value)} />
+          </Field>
+        </div>
+        {needsEvidence && (
+          <div className="alert warn">
+            <Icon name="alert" />This stage needs evidence before it can be marked done.
+            <div className="row" style={{ marginTop: 6 }}>
+              <input className="input" placeholder="https://… (photo / document link)" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
+              <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidence}>Add</button>
+            </div>
+          </div>
+        )}
+        <div className="row wrap">
+          {def.decision ? (
+            <>
+              <button className="btn sm primary" disabled={!!busy} onClick={() => act('approve')}><Icon name="check" size={13} />{busy === 'approve' ? 'Saving…' : 'Approve'}</button>
+              <button className="btn sm danger" disabled={!!busy || rejectNeedsReason} title={rejectNeedsReason ? 'Remarks required to reject' : undefined} onClick={() => act('reject')}><Icon name="x" size={13} />{busy === 'reject' ? 'Saving…' : 'Reject'}</button>
+            </>
+          ) : (
+            <button className="btn sm primary" disabled={!!busy || needsEvidence || (needsEngineer && !engineerId) || closedNeedsCategory} onClick={() => act('complete')}>
+              <Icon name="check" size={13} />{busy === 'complete' ? 'Saving…' : 'Mark Done'}
+            </button>
+          )}
+          {def.optional && (
+            <button className="btn sm ghost" disabled={!!busy || skipNeedsReason} title={skipNeedsReason ? 'Remarks required to skip' : undefined} onClick={() => act('skip')}><Icon name="skip" size={13} />{busy === 'skip' ? 'Saving…' : 'Skip (not needed)'}</button>
+          )}
+        </div>
+        <ErrorBox error={error} />
+      </div>
+    </div>
+  );
+}
+
 function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -362,6 +477,7 @@ export function RequestDetail() {
         <div className="card-body flush"><StageStrip d={data} /></div>
       </div>
 
+      {can('stage.update') && <CurrentStageAction d={data} onDone={setData} />}
       {can('request.manage') && <div style={{ marginBottom: 16 }}><RequestActions d={data} onDone={setData} /></div>}
 
       <Tabs tabs={tabDefs} value={tab} onChange={setTab} />
