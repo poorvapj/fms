@@ -94,40 +94,38 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   const pub = await new Client().post('/public/requests', imageForm(fields));
   assert.equal(pub.status, 201, JSON.stringify(pub.body));
   const track = await new Client().get(`/public/track/${pub.body.tracking_token}`);
-  assert.equal(track.body.status, 'open');
+  assert.equal(track.body.status, 'in_progress'); // no triage gate — the job moves straight to Site Visit
 
   const list = await coord.get(`/requests?q=${pub.body.request_no}`);
   const id = list.body.rows[0].id;
   let d = (await coord.get(`/requests/${id}`)).body;
-  assert.equal(d.request.current_stage_key, 'triage');
+  assert.equal(d.request.current_stage_key, 'site_visit');
   assert.equal(d.attachments.filter((a: any) => a.stage_key === 'created').length, 1);
 
   // engineers cannot see unassigned work; viewers cannot act
   assert.equal((await eng.get(`/requests/${id}`)).status, 403);
-  assert.equal((await viewer.post(`/requests/${id}/stages/triage/decision`, { decision: 'approved' })).status, 403);
+  assert.equal((await viewer.post(`/requests/${id}/stages/site_visit/complete`, {})).status, 403);
 
   const engineers = (await admin.get('/masters/engineers')).body;
   const kuldeep = engineers.find((e: any) => e.name === 'Kuldeep').id;
 
-  // coordinator approves at triage: PH + permission required, material not required
-  let r = await coord.post(`/requests/${id}/stages/triage/decision`, {
-    decision: 'approved', priority: 'high', site_engineer_id: kuldeep,
-    requires_ph_discussion: true, requires_material: false, requires_permission: true,
-  });
+  // coordinator assigns the site engineer (no triage gate — straight to Site Visit)
+  let r = await coord.post(`/requests/${id}/assign`, { site_engineer_id: kuldeep });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.request.current_stage_key, 'site_visit');
-  assert.equal(r.body.stages.find((s: any) => s.stage_key === 'material').status, 'skipped');
 
   // site engineer (linked login) does the site visit
   r = await eng.post(`/requests/${id}/stages/site_visit/complete`, { comments: 'Visited, washer needs replacing' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.request.status, 'pending_approval');
+  assert.equal(r.body.request.current_stage_key, 'ph_discussion');
+
+  // material not required for this job — coordinator skips it
+  assert.equal((await coord.post(`/requests/${id}/stages/material/skip`, { reason: 'No material dependency' })).status, 200);
 
   // wrong role cannot approve PH discussion
   assert.equal((await approver.post(`/requests/${id}/stages/ph_discussion/decision`, { decision: 'approved' })).status, 403);
   r = await ph.post(`/requests/${id}/stages/ph_discussion/decision`, { decision: 'approved', comments: 'Go ahead' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  r = await coord.post(`/requests/${id}/stages/communicate_requester/complete`, { comments: 'Called resident' });
   assert.equal(r.body.request.current_stage_key, 'permission');
 
   // approver rejects → on hold; coordinator resumes; approver approves
@@ -136,10 +134,12 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   r = await coord.post(`/requests/${id}/resume`, { comments: 'Quotation attached' });
   assert.equal(r.body.request.current_stage_key, 'permission');
   r = await approver.post(`/requests/${id}/stages/permission/decision`, { decision: 'approved' });
-  assert.equal(r.body.request.current_stage_key, 'engineer_assigned');
+  assert.equal(r.body.request.current_stage_key, 'work_started');
 
-  r = await coord.post(`/requests/${id}/stages/engineer_assigned/complete`, { engineer_id: kuldeep });
+  // coordinator assigns the work engineer (no Engineer Assigned stage — just the Assign action)
+  r = await coord.post(`/requests/${id}/assign`, { assigned_engineer_id: kuldeep });
   assert.equal(r.body.request.assigned_engineer_id, kuldeep);
+
   const jobs = (await eng.get('/my-jobs')).body;
   assert.ok([...jobs.overdue, ...jobs.today, ...jobs.upcoming].some((j: any) => j.id === id), 'job appears in engineer My Jobs');
   const queue = (await coord.get('/coordinator/queue')).body;
@@ -157,12 +157,6 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   assert.equal((await eng.post(`/requests/${id}/attachments`, ev)).status, 201);
   r = await eng.post(`/requests/${id}/stages/work_completed/complete`, { comments: 'Washer replaced' });
   assert.equal(r.body.request.status, 'completed');
-
-  // verification fail → rework, then pass
-  r = await ph.post(`/requests/${id}/stages/verification/decision`, { decision: 'rejected', comments: 'Still dripping' });
-  assert.equal(r.body.request.current_stage_key, 'work_completed');
-  r = await eng.post(`/requests/${id}/stages/work_completed/complete`, { comments: 'Fixed properly' });
-  r = await ph.post(`/requests/${id}/stages/verification/decision`, { decision: 'approved' });
   assert.equal(r.body.request.current_stage_key, 'closed');
 
   // only the coordinator closes
@@ -174,10 +168,10 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   const tracked = (await new Client().get(`/public/track/${pub.body.tracking_token}`)).body;
   assert.equal(tracked.status, 'closed');
 
-  // triage rejection cancels the request
+  // cancelling a job early (no dedicated reject-at-intake stage anymore — the coordinator cancels directly)
   const pub2 = (await new Client().post('/public/requests', imageForm({ ...fields, description: 'Duplicate of an older complaint' }))).body;
   const id2 = (await coord.get(`/requests?q=${pub2.request_no}`)).body.rows[0].id;
-  r = await coord.post(`/requests/${id2}/stages/triage/decision`, { decision: 'rejected', comments: 'Duplicate' });
+  r = await coord.post(`/requests/${id2}/cancel`, { reason: 'Duplicate' });
   assert.equal(r.body.request.status, 'cancelled');
 });
 

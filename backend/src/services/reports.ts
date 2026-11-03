@@ -191,7 +191,7 @@ export async function legacyPendingSection(rows: Doc[], names: Names, now: strin
   }
   const out = open.map((r, i) => {
     const imgs = imagesByRequest.get(r._id) ?? [];
-    const remark = stage(r, 'verification')?.comments || r.closure_note || r.hold_reason || null;
+    const remark = stage(r, 'closed')?.comments || r.closure_note || r.hold_reason || null;
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
       work_category: names.categories.get(r.category_id) ?? '', image_1: imgs[0] ?? '', image_2: imgs[1] ?? '',

@@ -1,12 +1,12 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { col, type Doc } from '../db/mongo.ts';
 import { can } from '../domain/permissions.ts';
-import { PRIORITIES, WEEKLY_OFF, type StageDefinition, type StageKey } from '../domain/workflow.ts';
+import { WEEKLY_OFF, type StageDefinition, type StageKey } from '../domain/workflow.ts';
 import { addWorkingDays, diffMinutes, formatMs, normalizeLocal, nowLocal, toMs } from '../utils/dates.ts';
-import { badRequest, bool, conflict, forbidden, int, oneOf, requiredStr, str } from '../utils/http.ts';
+import { badRequest, conflict, forbidden, int, oneOf, requiredStr, str } from '../utils/http.ts';
 import { logEvent } from './events.ts';
 import { assertCanView, loadRequest } from './requests.ts';
-import { stageDef, stageDefs } from './stageDefs.ts';
+import { stageDef } from './stageDefs.ts';
 import { refreshState, saveRequest, stageOf, type RequestDoc, type StageDoc } from './workflowEngine.ts';
 import { notifySiteVisitIfNeeded } from './slack.ts';
 
@@ -67,41 +67,17 @@ export async function completeStage(requestId: number, key: StageKey, body: any,
 
   const now = nowLocal();
   const extra: string[] = [];
-  if (key === 'triage') {
-    const priority = oneOf(body.priority ?? r.priority, PRIORITIES, 'Priority');
-    const flags = {
-      requires_ph_discussion: bool(body.requires_ph_discussion),
-      requires_material: bool(body.requires_material),
-      requires_permission: bool(body.requires_permission),
-    };
-    if (Object.values(flags).some((v) => v === null)) throw badRequest('Answer whether Project Head discussion, material and permission are required');
-    const siteEngineer = await engineerExists(int(body.site_engineer_id));
-    if (!siteEngineer) throw badRequest('Select the site engineer for the site visit');
-    Object.assign(r, { priority, site_engineer_id: siteEngineer, ...Object.fromEntries(Object.entries(flags).map(([k, v]) => [k, v ? 1 : 0])) });
-    stageOf(r, 'site_visit').engineer_id = siteEngineer;
-    for (const d of stageDefs().filter((x) => x.flag)) {
-      const s = stageOf(r, d.key);
-      if (s.status !== 'pending' && s.status !== 'skipped') continue;
-      const required = flags[d.flag!];
-      Object.assign(s, { status: required ? 'pending' : 'skipped', comments: required ? null : 'Not required (decided at triage)', updated_by: user.id, updated_at: now });
-    }
-    extra.push(`priority ${priority}`, ...Object.entries(flags).filter(([, v]) => v).map(([k]) => k.replace('requires_', '').replace('_', ' ') + ' required'));
-    engineerId = null;
-  }
-  if (key === 'engineer_assigned') {
+  if (key === 'site_visit' && engineerId === null) engineerId = r.site_engineer_id ?? null;
+  if (key === 'work_started') {
     const eng = await engineerExists(int(body.engineer_id) ?? r.assigned_engineer_id ?? null);
     if (!eng) throw badRequest('Select the engineer who will carry out the work');
     engineerId = eng;
     r.assigned_engineer_id = eng;
-    for (const k of ['work_started', 'work_completed'] as const) {
-      const s = stageOf(r, k);
-      if (s.status === 'pending' || s.status === 'active') s.engineer_id = eng;
-    }
+    const wc = stageOf(r, 'work_completed');
+    if (wc.status === 'pending' || wc.status === 'active') wc.engineer_id = eng;
     extra.push(`assigned to ${await engineerName(eng)}`);
   }
-  if (key === 'site_visit' && engineerId === null) engineerId = r.site_engineer_id ?? null;
-  if ((key === 'work_started' || key === 'work_completed') && engineerId === null) engineerId = r.assigned_engineer_id ?? null;
-  if (key === 'verification') r.verified_by_name = str(body.verified_by_name, 120) ?? user.name;
+  if (key === 'work_completed' && engineerId === null) engineerId = r.assigned_engineer_id ?? null;
   if (key === 'closed') {
     const category = requiredStr(body.closure_category, 'Closure category', 80);
     if (!(await col.closureCategories().findOne({ name: category, active: 1 }))) throw badRequest('Unknown closure category');
@@ -154,19 +130,6 @@ export async function decideStage(requestId: number, key: StageKey, body: any, u
   if (stage.status !== 'active') throw conflict(`${def.name} is not the current stage`);
   const reason = requiredStr(body.comments, 'Reason for rejection', 2000);
   const now = nowLocal();
-  if (key === 'verification') {
-    // Verification failure sends the job back to the engineer for rework.
-    return reworkFromCompletion(r, user, `Verification failed: ${reason}`);
-  }
-  if (key === 'triage') {
-    // Not approved by the coordinator: close it out as rejected (reversible via Reopen).
-    Object.assign(stage, { status: 'rejected', decision: 'rejected', actual_at: now, comments: reason, responsible_user_id: user.id, responsible_name: user.name, updated_by: user.id, updated_at: now });
-    Object.assign(r, { cancelled_at: now, cancel_reason: `Not approved at triage: ${reason}`, closure_category: 'Rejected' });
-    refreshState(r);
-    await saveRequest(r);
-    await logEvent(requestId, 'stage_rejected', `Job card not approved: ${reason}`, { stageKey: key, user });
-    return;
-  }
   Object.assign(stage, { status: 'rejected', decision: 'rejected', comments: reason, responsible_user_id: user.id, responsible_name: user.name, updated_by: user.id, updated_at: now });
   Object.assign(r, { held_at: now, hold_reason: `${def.name} rejected: ${reason}` });
   refreshState(r);
@@ -174,12 +137,10 @@ export async function decideStage(requestId: number, key: StageKey, body: any, u
   await logEvent(requestId, 'stage_rejected', `${def.name} rejected: ${reason}`, { stageKey: key, user });
 }
 
-/** Return the job to Work Completed (active) and reset verification / closure. */
+/** Return the job to Work Completed (active) and reset closure. */
 async function reworkFromCompletion(r: RequestDoc, user: AuthUser, message: string) {
   const now = nowLocal();
-  for (const k of ['verification', 'closed'] as const) {
-    Object.assign(stageOf(r, k), { status: 'pending', actual_at: null, delay_minutes: null, decision: null, planned_at: null, updated_by: user.id, updated_at: now });
-  }
+  Object.assign(stageOf(r, 'closed'), { status: 'pending', actual_at: null, delay_minutes: null, decision: null, planned_at: null, updated_by: user.id, updated_at: now });
   Object.assign(stageOf(r, 'work_completed'), {
     status: 'active', actual_at: null, delay_minutes: null, planned_at: formatMs(addWorkingDays(toMs(now)!, 1, WEEKLY_OFF)),
     comments: message, updated_by: user.id, updated_at: now,

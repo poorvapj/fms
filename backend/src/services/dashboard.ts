@@ -9,8 +9,8 @@ import { thresholdHoursFor } from './escalationRules.ts';
 import { masterNames } from './masters.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 
-const WAITING_APPROVAL: StageKey[] = ['triage', 'ph_discussion', 'permission'];
-const VERIFICATION: StageKey[] = ['verification', 'closed'];
+const WAITING_APPROVAL: StageKey[] = ['ph_discussion', 'permission'];
+const VERIFICATION: StageKey[] = ['closed'];
 
 /** Job cards reopened for rework after being closed/completed. */
 async function reopenedIds(): Promise<Set<number>> {
@@ -80,9 +80,9 @@ export async function dashboard(query: Record<string, any>, user: AuthUser) {
 
 /** Stages each non-engineer role is primarily responsible for (their "My Jobs" queue). */
 const ROLE_QUEUE: Partial<Record<Role, StageKey[]>> = {
-  admin: ['triage', 'communicate_requester', 'engineer_assigned', 'verification', 'closed'],
-  coordinator: ['triage', 'communicate_requester', 'engineer_assigned', 'verification', 'closed'],
-  project_head: ['ph_discussion', 'verification'],
+  admin: ['closed'],
+  coordinator: ['closed'],
+  project_head: ['ph_discussion'],
   approver: ['permission'],
   store: ['material'],
 };
@@ -168,10 +168,6 @@ export async function coordinatorQueue(query: Record<string, any>, user: AuthUse
       continue;
     }
     switch (r.current_stage_key) {
-      case 'triage':
-        push('approval', sev(late, 'medium'), 'is waiting for approval', 'New job card raised and not yet approved.',
-          'Every new job card must be approved at Triage before a site visit.', 'Process Coordinator', 'Open the job card and Approve (set site engineer & dependencies) or Reject.');
-        break;
       case 'site_visit':
         if (!r.site_engineer_id) {
           push('no_engineer', 'high', 'has no site engineer assigned', 'Job is at Site Visit but nobody is assigned to visit.',
@@ -180,14 +176,6 @@ export async function coordinatorQueue(query: Record<string, any>, user: AuthUse
           push('overdue', sev(late), 'site visit is overdue', 'Site visit is past its planned time and is not done.',
             'Current stage is past its planned time.', siteEngineerName ?? 'Site engineer', `Chase ${siteEngineerName ?? 'the site engineer'} to complete the site visit.`);
         }
-        break;
-      case 'engineer_assigned':
-        push('assign', sev(late, 'medium'), 'needs an engineer to start work', 'All approvals are done; the work has not been handed to an engineer.',
-          'Engineer Assigned is a coordinator step.', 'Process Coordinator', 'Assign the engineer and inform them to start.');
-        break;
-      case 'communicate_requester':
-        push('inform', sev(late, 'low'), 'requester has not been informed', 'Site visit / discussion done; the person who raised the problem has not been updated.',
-          'Requester Informed is a coordinator step.', 'Process Coordinator', 'Call / WhatsApp the requester, then mark Requester Informed.');
         break;
       case 'closed':
         push('close', sev(late, 'low'), 'is ready to close', 'Work is completed and verified.', 'Only the Process Coordinator can close a job card.',

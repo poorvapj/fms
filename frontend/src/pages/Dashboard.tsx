@@ -60,7 +60,7 @@ export function Dashboard() {
             <Kpi label="Due Today" value={k.due_today} to={link({ view: 'open', sort: 'planned', dir: 'asc' })} hint="Next action due today" tone="info" />
             <Kpi label="Overdue" value={k.overdue} to={link({ view: 'overdue' })} hint="Next action past due" tone="bad" />
             <Kpi label="Waiting Material" value={k.waiting_material} to={link({ view: 'material' })} tone="warn" />
-            <Kpi label="Waiting Approval" value={k.waiting_approval} to={link({ view: 'approval' })} hint="Triage, Project Head, Permission" tone="warn" />
+            <Kpi label="Waiting Approval" value={k.waiting_approval} to={link({ view: 'approval' })} hint="Project Head, Permission" tone="warn" />
             <Kpi label="In Progress" value={k.in_progress} to={link({ view: 'in_progress' })} hint="Site visit or work under way" />
             <Kpi label="Verification Pending" value={k.verification_pending} to={link({ view: 'verification' })} hint="Work done, not yet closed" tone="info" />
             <Kpi label="Closed (30d)" value={k.closed_30d} to={link({ view: 'closed' })} hint={`${k.closed.toLocaleString('en-IN')} closed in total`} tone="good" />

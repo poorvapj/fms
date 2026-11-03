@@ -18,7 +18,7 @@ export type Permission =
   | 'request.view_own'
   | 'request.create'
   | 'request.edit'
-  | 'request.manage'      // triage, assign, hold, resume, cancel, close, reopen
+  | 'request.manage'      // assign, hold, resume, cancel, close, reopen
   | 'request.comment'
   | 'stage.update'        // subject to stage-level role check
   | 'stage.edit_history'  // correct planned/actual/status on any stage

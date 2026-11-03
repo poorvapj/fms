@@ -218,9 +218,8 @@ export function transformRow(
       Object.assign(base, { status: 'completed', planned_at: requestedAt, actual_at: requestedAt, delay_minutes: 0, responsible_name: req.requester_name || 'FMS Google Form' });
     } else if (e) {
       base.planned_at = e.planned;
-      base.engineer = def.key === 'site_visit' ? siteEngineer : def.key === 'ph_discussion' ? phEngineer : def.key === 'work_completed' ? assignedEngineer : def.key === 'engineer_assigned' ? assignedEngineer : null;
+      base.engineer = def.key === 'site_visit' ? siteEngineer : def.key === 'ph_discussion' ? phEngineer : def.key === 'work_completed' ? assignedEngineer : null;
       base.responsible_name = (def.key === 'site_visit' || def.key === 'ph_discussion') && base.engineer ? base.engineer : who[def.key] ?? null;
-      if (!e.done && def.key === 'engineer_assigned') base.engineer = null;
       if (e.done) {
         base.status = 'completed';
         base.actual_at = e.actual;
@@ -235,22 +234,13 @@ export function transformRow(
       if (def.key === 'work_completed' && req.completion_images && !urls(req.completion_images).length) {
         base.comments = `FMS image link: ${req.completion_images}`;
       }
-    } else if (def.key === 'triage') {
-      Object.assign(base, { status: 'skipped', comments: 'Not tracked in legacy FMS' });
     } else if (def.key === 'work_started') {
       if (workDone || def.seq < lastDoneSeq) Object.assign(base, { status: 'skipped', comments: 'Not tracked in legacy FMS' });
       base.engineer = assignedEngineer;
-    } else if (def.key === 'verification' && workDone) {
-      Object.assign(base, {
-        status: 'completed', actual_at: wc!.actual, actual_inferred: true, responsible_name: verifiedBy ?? who.work_completed ?? null,
-        comments: remarks ?? 'Legacy record — no separate verification step in FMS',
-      });
-    } else if (def.key === 'verification' && remarks) {
-      base.comments = remarks;
     } else if (def.key === 'closed' && workDone) {
       Object.assign(base, {
-        status: 'completed', actual_at: wc!.actual, actual_inferred: true, responsible_name: who.work_completed ?? null,
-        comments: closureNote ?? 'Closed on FMS work completion',
+        status: 'completed', actual_at: wc!.actual, actual_inferred: true, responsible_name: verifiedBy ?? who.work_completed ?? null,
+        comments: closureNote ?? remarks ?? 'Closed on FMS work completion',
       });
     }
 

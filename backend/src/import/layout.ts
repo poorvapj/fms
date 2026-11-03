@@ -47,12 +47,9 @@ const STAGE_PATTERNS: [RegExp, StageKey][] = [
   [/site\s*visit/, 'site_visit'],
   [/project\s*head|discussion/, 'ph_discussion'],
   [/material/, 'material'],
-  [/problem\s*rais|requester|complainant|inform/, 'communicate_requester'],
   [/permission|approval/, 'permission'],
-  [/engineer\s*to\s*start|assign/, 'engineer_assigned'],
   [/work\s*start/, 'work_started'],
   [/work\s*complet|completion/, 'work_completed'],
-  [/verif/, 'verification'],
   [/closed|closure/, 'closed'],
 ];
 
