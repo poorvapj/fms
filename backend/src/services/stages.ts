@@ -1,7 +1,7 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { col, type Doc } from '../db/mongo.ts';
 import { can } from '../domain/permissions.ts';
-import { WEEKLY_OFF, type StageDefinition, type StageKey } from '../domain/workflow.ts';
+import { DEFAULT_STAGES, WEEKLY_OFF, type StageDefinition, type StageKey } from '../domain/workflow.ts';
 import { addWorkingDays, diffMinutes, formatMs, normalizeLocal, nowLocal, toMs } from '../utils/dates.ts';
 import { badRequest, conflict, forbidden, int, oneOf, requiredStr, str } from '../utils/http.ts';
 import { logEvent } from './events.ts';
@@ -221,6 +221,40 @@ export async function cancelRequest(requestId: number, body: any, user: AuthUser
   refreshState(r);
   await saveRequest(r);
   await logEvent(requestId, 'cancel', `Cancelled: ${reason}`, { user });
+}
+
+/**
+ * Shortcut for "turns out nothing more needs doing" — e.g. decided right after Site Visit.
+ * Force-skips every stage between the current one and Closed, then closes the job card in one go,
+ * instead of the coordinator having to Force Skip each remaining stage one at a time.
+ */
+export async function fastCloseRequest(requestId: number, body: any, user: AuthUser) {
+  requireManage(user);
+  const r = await loadRequest(requestId);
+  assertLive(r);
+  const reason = requiredStr(body.reason, 'Reason', 1000);
+  const category = requiredStr(body.closure_category, 'Closure category', 80);
+  if (!(await col.closureCategories().findOne({ name: category, active: 1 }))) throw badRequest('Unknown closure category');
+
+  const now = nowLocal();
+  for (const def of DEFAULT_STAGES) {
+    if (def.key === 'created' || def.key === 'closed') continue;
+    const stage = stageOf(r, def.key);
+    if (stage.status === 'pending' || stage.status === 'active') {
+      Object.assign(stage, { status: 'skipped', comments: `Not needed — closing early: ${reason}`, responsible_user_id: user.id, responsible_name: user.name, updated_by: user.id, updated_at: now });
+      if (def.flag) r[def.flag] = 0;
+    }
+  }
+  const closedStage = stageOf(r, 'closed');
+  Object.assign(closedStage, {
+    status: 'completed', actual_at: now, delay_minutes: null, responsible_user_id: user.id, responsible_name: user.name,
+    comments: reason, attention: false, source: 'ui', updated_by: user.id, updated_at: now,
+  });
+  r.closure_category = category;
+  r.closure_note = reason;
+  refreshState(r);
+  await saveRequest(r);
+  await logEvent(requestId, 'stage_completed', `Closed early (${category}): ${reason}`, { stageKey: 'closed', user });
 }
 
 export async function reopenRequest(requestId: number, body: any, user: AuthUser) {

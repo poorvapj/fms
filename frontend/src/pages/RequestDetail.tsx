@@ -94,30 +94,44 @@ function StageDetail({ d, stageKey, onEdit, canEdit }: { d: Detail; stageKey: st
 
 function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
   const meta = useMeta();
-  const [dialog, setDialog] = useState<null | 'hold' | 'resume' | 'cancel' | 'reopen' | 'assign'>(null);
+  const { can } = useAuth();
+  const [dialog, setDialog] = useState<null | 'hold' | 'resume' | 'cancel' | 'reopen' | 'assign' | 'fast-close'>(null);
   const [text, setText] = useState('');
   const [site, setSite] = useState(String(d.request.site_engineer_id ?? ''));
   const [eng, setEng] = useState(String(d.request.assigned_engineer_id ?? ''));
+  const [closureCategory, setClosureCategory] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const r = d.request;
   const live = !['closed', 'cancelled'].includes(r.status);
+  const canFastClose = live && r.status !== 'on_hold' && !['closed', 'completed'].includes(r.status) && can('request.manage');
 
   const run = async () => {
     setBusy(true);
     setError(null);
     try {
-      const body = dialog === 'assign' ? { site_engineer_id: site || null, assigned_engineer_id: eng || null } : dialog === 'resume' ? { comments: text } : { reason: text };
+      const body = dialog === 'assign' ? { site_engineer_id: site || null, assigned_engineer_id: eng || null }
+        : dialog === 'resume' ? { comments: text }
+        : dialog === 'fast-close' ? { reason: text, closure_category: closureCategory }
+        : { reason: text };
       onDone(await api.post<Detail>(`/requests/${r.id}/${dialog}`, body));
       setDialog(null);
       setText('');
+      setClosureCategory('');
     } catch (e) {
       setError(errorText(e));
     } finally {
       setBusy(false);
     }
   };
-  const titles = { hold: 'Put on hold', resume: 'Resume job card', cancel: 'Cancel job card', reopen: r.status === 'cancelled' ? 'Reinstate job card' : 'Reopen for rework', assign: 'Reassign engineers' };
+  const titles = {
+    hold: 'Put on hold', resume: 'Resume job card', cancel: 'Cancel job card',
+    reopen: r.status === 'cancelled' ? 'Reinstate job card' : 'Reopen for rework', assign: 'Reassign engineers',
+    'fast-close': 'Not needed — close job now',
+  };
+  const confirmDisabled = busy
+    || (dialog === 'fast-close' ? !text.trim() || !closureCategory
+      : dialog !== 'assign' && dialog !== 'resume' && !text.trim());
 
   return (
     <div className="card">
@@ -127,12 +141,13 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
         {live && r.status !== 'on_hold' && <button className="btn sm" onClick={() => setDialog('hold')}><Icon name="pause" size={13} />Hold</button>}
         {r.status === 'on_hold' && <button className="btn sm primary" onClick={() => setDialog('resume')}><Icon name="play" size={13} />Resume</button>}
         {live && <button className="btn sm danger" onClick={() => setDialog('cancel')}><Icon name="x" size={13} />Cancel</button>}
+        {canFastClose && <button className="btn sm ghost" onClick={() => setDialog('fast-close')} title="Skip every remaining stage and close the job card right now"><Icon name="skip" size={13} />Not Needed — Close</button>}
         {['closed', 'completed', 'cancelled'].includes(r.status) && <button className="btn sm" onClick={() => setDialog('reopen')}><Icon name="rotate" size={13} />{titles.reopen}</button>}
       </div>
       {dialog && (
         <Modal title={titles[dialog]} onClose={() => setDialog(null)} footer={<>
           <button className="btn" onClick={() => setDialog(null)}>Close</button>
-          <button className={`btn ${dialog === 'cancel' ? 'danger' : 'primary'}`} disabled={busy || (dialog !== 'assign' && dialog !== 'resume' && !text.trim())} onClick={run}>{busy ? 'Saving…' : 'Confirm'}</button>
+          <button className={`btn ${dialog === 'cancel' ? 'danger' : 'primary'}`} disabled={confirmDisabled} onClick={run}>{busy ? 'Saving…' : 'Confirm'}</button>
         </>}>
           {dialog === 'assign' ? <>
             <Field label="Site engineer">
@@ -144,6 +159,16 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
               <select className="select" value={eng} onChange={(e) => setEng(e.target.value)}>
                 <option value="">None</option>{meta.engineers.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
+            </Field>
+          </> : dialog === 'fast-close' ? <>
+            <div className="alert warn"><Icon name="alert" />This skips every remaining stage (Material, Permission, Work Started, Work Completed — whichever are still pending) and closes the job card immediately.</div>
+            <Field label="Closure category" required>
+              <select className="select" value={closureCategory} onChange={(e) => setClosureCategory(e.target.value)}>
+                <option value="">Select…</option>{meta.closure_categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Reason" required>
+              <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
             </Field>
           </> : (
             <Field label={dialog === 'resume' ? 'Comment (optional)' : 'Reason'} required={dialog !== 'resume'}>

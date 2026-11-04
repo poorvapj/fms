@@ -19,7 +19,7 @@ import { legacyPendingSection, PROJECTION as REPORT_PROJECTION, REPORTS, runRepo
 import { buildFilter, createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
-  addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, holdRequest, reopenRequest, resumeRequest, skipStage,
+  addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, holdRequest, reopenRequest, resumeRequest, skipStage,
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
 import { nowLocal } from '../utils/dates.ts';
@@ -146,7 +146,7 @@ api.patch('/requests/:id/stages/:key', async (req, res) => {
   res.json(await getRequestDetail(id(req), req.user!));
 });
 
-const actions = { hold: holdRequest, resume: resumeRequest, cancel: cancelRequest, reopen: reopenRequest, assign: assignEngineers, comments: addComment } as const;
+const actions = { hold: holdRequest, resume: resumeRequest, cancel: cancelRequest, reopen: reopenRequest, assign: assignEngineers, comments: addComment, 'fast-close': fastCloseRequest } as const;
 for (const [name, fn] of Object.entries(actions)) {
   api.post(`/requests/:id/${name}`, async (req, res) => {
     await fn(id(req), req.body ?? {}, req.user!);
