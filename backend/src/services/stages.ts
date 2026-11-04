@@ -105,7 +105,9 @@ export async function skipStage(requestId: number, key: StageKey, body: any, use
   const r = await loadRequest(requestId);
   const def = stageDef(key);
   const stage = stageOf(r, key);
-  if (!def.optional) throw badRequest(`${def.name} is mandatory and cannot be skipped`);
+  // Optional stages can be skipped by whoever can act on them; mandatory stages only by someone
+  // who manages the whole job card (admin/coordinator), as a deliberate manual override.
+  if (!def.optional && !can(user.role, 'request.manage')) throw badRequest(`${def.name} is mandatory and cannot be skipped`);
   if (!canActOnStage(user, def, r, stage) && !can(user.role, 'request.manage')) throw forbidden();
   assertLive(r);
   if (!['active', 'pending'].includes(stage.status)) throw conflict(`${def.name} cannot be skipped in its current state`);

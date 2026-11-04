@@ -190,9 +190,8 @@ export function transformRow(
     return n;
   };
   const siteEngineer = engineerOf('site_visit');
-  const phEngineer = engineerOf('ph_discussion');
   const wcEngineer = engineerOf('work_completed');
-  const assignedEngineer = wcEngineer ?? phEngineer ?? siteEngineer;
+  const assignedEngineer = wcEngineer ?? siteEngineer;
   const holdByEngineerCol = LEGACY_STAGE_KEYS.some((k) => /^hold$/i.test(clean(stageRaw[k]?.engineer)));
 
   let holdReason: string | null = null;
@@ -218,8 +217,8 @@ export function transformRow(
       Object.assign(base, { status: 'completed', planned_at: requestedAt, actual_at: requestedAt, delay_minutes: 0, responsible_name: req.requester_name || 'FMS Google Form' });
     } else if (e) {
       base.planned_at = e.planned;
-      base.engineer = def.key === 'site_visit' ? siteEngineer : def.key === 'ph_discussion' ? phEngineer : def.key === 'work_completed' ? assignedEngineer : null;
-      base.responsible_name = (def.key === 'site_visit' || def.key === 'ph_discussion') && base.engineer ? base.engineer : who[def.key] ?? null;
+      base.engineer = def.key === 'site_visit' ? siteEngineer : def.key === 'work_completed' ? assignedEngineer : null;
+      base.responsible_name = def.key === 'site_visit' && base.engineer ? base.engineer : who[def.key] ?? null;
       if (e.done) {
         base.status = 'completed';
         base.actual_at = e.actual;
@@ -227,7 +226,7 @@ export function transformRow(
         base.status = 'skipped';
         base.comments = e.hasData ? 'Not recorded in FMS (later stages were completed)' : 'Not recorded in FMS';
       } else if (def.optional && !e.hasData && (workDone || def.key === 'material')) {
-        // Open rows keep PH discussion / permission pending (the FMS norm); the coordinator can mark them not required.
+        // Open rows keep Permission pending (the FMS norm); the coordinator can mark it not required.
         base.status = 'skipped';
         base.comments = 'Not required (no FMS entry)';
       }

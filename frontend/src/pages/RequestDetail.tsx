@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { ImagePicker } from '../components/ImagePicker';
 import { Empty, ErrorBox, Field, Loading, Modal, StageStatusBadge, StatusBadge, Tabs } from '../components/ui';
 import { API_BASE, api, errorText } from '../lib/api';
 import { useAuth, useMeta } from '../lib/auth';
@@ -163,12 +164,14 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
  */
 function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
   const meta = useMeta();
+  const { can } = useAuth();
   const stage = d.stages.find((s) => s.status === 'active');
   const def = meta.stages.find((s) => s.key === stage?.stage_key);
   const [comments, setComments] = useState('');
   const [engineerId, setEngineerId] = useState(String(d.request.assigned_engineer_id ?? d.request.site_engineer_id ?? ''));
   const [closureCategory, setClosureCategory] = useState('');
   const [evidenceLink, setEvidenceLink] = useState('');
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -178,11 +181,34 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
 
-  const addEvidence = async () => {
+  const addEvidenceLink = async () => {
     setBusy('evidence');
     setError(null);
     try { onDone(await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: evidenceLink, stage_key: stage.stage_key })); setEvidenceLink(''); }
     catch (e) { setError(errorText(e)); } finally { setBusy(null); }
+  };
+
+  const pickEvidencePhotos = async (files: File[]) => {
+    const newFiles = files.filter((f) => !evidenceFiles.includes(f));
+    setEvidenceFiles(files);
+    if (!newFiles.length) return;
+    setBusy('evidence');
+    setError(null);
+    try {
+      let result: Detail | null = null;
+      for (const file of newFiles) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('stage_key', stage.stage_key);
+        result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+      }
+      if (result) onDone(result);
+      setEvidenceFiles([]);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const act = async (kind: 'complete' | 'approve' | 'reject' | 'skip') => {
@@ -244,9 +270,13 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
         {needsEvidence && (
           <div className="alert warn">
             <Icon name="alert" />This stage needs evidence before it can be marked done.
-            <div className="row" style={{ marginTop: 6 }}>
-              <input className="input" placeholder="https://… (photo / document link)" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
-              <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidence}>Add</button>
+            <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+              <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={5} accept="image/*" label="Upload photo" onError={setError} />
+              {busy === 'evidence' && <div className="muted small">Uploading…</div>}
+              <div className="row">
+                <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
+                <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidenceLink}>Add link</button>
+              </div>
             </div>
           </div>
         )}
@@ -261,8 +291,10 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
               <Icon name="check" size={13} />{busy === 'complete' ? 'Saving…' : 'Mark Done'}
             </button>
           )}
-          {def.optional && (
-            <button className="btn sm ghost" disabled={!!busy || skipNeedsReason} title={skipNeedsReason ? 'Remarks required to skip' : undefined} onClick={() => act('skip')}><Icon name="skip" size={13} />{busy === 'skip' ? 'Saving…' : 'Skip (not needed)'}</button>
+          {(def.optional || can('request.manage')) && (
+            <button className="btn sm ghost" disabled={!!busy || skipNeedsReason} title={skipNeedsReason ? 'Remarks required to skip' : def.optional ? undefined : 'Mandatory stage — force-skip as coordinator/admin'} onClick={() => act('skip')}>
+              <Icon name="skip" size={13} />{busy === 'skip' ? 'Saving…' : def.optional ? 'Skip (not needed)' : 'Force Skip'}
+            </button>
           )}
         </div>
         <ErrorBox error={error} />

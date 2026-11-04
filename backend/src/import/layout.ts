@@ -45,7 +45,6 @@ export function columnLetter(i: number): string {
 
 const STAGE_PATTERNS: [RegExp, StageKey][] = [
   [/site\s*visit/, 'site_visit'],
-  [/project\s*head|discussion/, 'ph_discussion'],
   [/material/, 'material'],
   [/permission|approval/, 'permission'],
   [/work\s*start/, 'work_started'],

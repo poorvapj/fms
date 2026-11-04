@@ -137,7 +137,6 @@ export interface RequestDetail {
     category_id: number;
     site_engineer_id: number | null;
     assigned_engineer_id: number | null;
-    requires_ph_discussion: number | null;
     requires_material: number | null;
     requires_permission: number | null;
     held_at: string | null;

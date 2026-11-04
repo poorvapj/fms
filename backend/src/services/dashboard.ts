@@ -9,7 +9,7 @@ import { thresholdHoursFor } from './escalationRules.ts';
 import { masterNames } from './masters.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 
-const WAITING_APPROVAL: StageKey[] = ['ph_discussion', 'permission'];
+const WAITING_APPROVAL: StageKey[] = ['permission'];
 const VERIFICATION: StageKey[] = ['closed'];
 
 /** Job cards reopened for rework after being closed/completed. */
@@ -82,7 +82,6 @@ export async function dashboard(query: Record<string, any>, user: AuthUser) {
 const ROLE_QUEUE: Partial<Record<Role, StageKey[]>> = {
   admin: ['closed'],
   coordinator: ['closed'],
-  project_head: ['ph_discussion'],
   approver: ['permission'],
   store: ['material'],
 };

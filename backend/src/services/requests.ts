@@ -271,7 +271,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
       location_detail: str(body.location_detail, 300), work_type: workType, property_no: propertyNo, reason, requester_email: email,
       requested_at: requestedAt, requester_name: requesterName, requester_contact: contact, created_by: user?.id ?? null, target_date: target,
       status: 'open', current_stage_key: null, current_stage_planned_at: null, site_engineer_id: null, assigned_engineer_id: null,
-      requires_ph_discussion: null, requires_material: null, requires_permission: null, hold_reason: null, held_at: null,
+      requires_material: null, requires_permission: null, hold_reason: null, held_at: null,
       cancelled_at: null, cancel_reason: null, completed_at: null, closed_at: null, closure_category: null, closure_note: null,
       verified_by_name: null, public_token: token, requester_ip: opts.ip ?? null, import_batch_id: null, import_row_no: null,
       modified_in_app: false, version: 1, created_at: requestedAt, updated_at: requestedAt,

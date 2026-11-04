@@ -77,6 +77,8 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   const admin = await new Client().login('admin', 'Admin@12345');
   const coord = await new Client().login('coordinator', 'Welcome@123');
   const ph = await new Client().login('projecthead', 'Welcome@123');
+  // no stage is bound to the Project Head role anymore (Project Head Discussion was removed) —
+  // "ph" now just serves as a handy "has no business acting on this stage" login for 403 checks.
   const approver = await new Client().login('approver', 'Welcome@123');
   const eng = await new Client().login('kuldeep', 'Welcome@123');
   const viewer = await new Client().login('viewer', 'Welcome@123');
@@ -117,16 +119,11 @@ test('full lifecycle: public form → approvals → engineer → coordinator clo
   r = await eng.post(`/requests/${id}/stages/site_visit/complete`, { comments: 'Visited, washer needs replacing' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.request.status, 'pending_approval');
-  assert.equal(r.body.request.current_stage_key, 'ph_discussion');
+  assert.equal(r.body.request.current_stage_key, 'material');
 
-  // material not required for this job — coordinator skips it
+  // material not required for this job — coordinator skips it; wrong role cannot approve Permission
   assert.equal((await coord.post(`/requests/${id}/stages/material/skip`, { reason: 'No material dependency' })).status, 200);
-
-  // wrong role cannot approve PH discussion
-  assert.equal((await approver.post(`/requests/${id}/stages/ph_discussion/decision`, { decision: 'approved' })).status, 403);
-  r = await ph.post(`/requests/${id}/stages/ph_discussion/decision`, { decision: 'approved', comments: 'Go ahead' });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.request.current_stage_key, 'permission');
+  assert.equal((await ph.post(`/requests/${id}/stages/permission/decision`, { decision: 'approved' })).status, 403);
 
   // approver rejects → on hold; coordinator resumes; approver approves
   r = await approver.post(`/requests/${id}/stages/permission/decision`, { decision: 'rejected', comments: 'Need quotation' });

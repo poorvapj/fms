@@ -2,7 +2,7 @@ import { addWorkingDays, atTime, formatMs, isWorkingDay, nextWorkingDay, toMs } 
 import type { Role } from './permissions.ts';
 
 export type StageKey =
-  | 'created' | 'site_visit' | 'ph_discussion' | 'material'
+  | 'created' | 'site_visit' | 'material'
   | 'permission' | 'work_started' | 'work_completed' | 'closed';
 
 export type StageGroup = 'intake' | 'assessment' | 'dependency' | 'coordination' | 'execution' | 'closure';
@@ -33,26 +33,25 @@ export interface StageDefinition {
   /** Dependency stages support approve / reject decisions. */
   decision: boolean;
   /** Request flag that switches an optional stage on. */
-  flag?: 'requires_ph_discussion' | 'requires_material' | 'requires_permission';
+  flag?: 'requires_material' | 'requires_permission';
   legacyName?: string;
 }
 
 export const DEFAULT_STAGES: StageDefinition[] = [
   { key: 'created', seq: 1, name: 'Request Created', group: 'intake', optional: false, roles: [], responsibleLabel: 'Requester', sla: { type: 'none' }, requiresEvidence: false, decision: false },
   { key: 'site_visit', seq: 2, name: 'Site Visit', group: 'assessment', optional: false, roles: ['admin', 'coordinator', 'project_head', 'engineer'], responsibleLabel: 'Site Engineer', sla: { type: 'next_day_at', time: '15:00', anchor: 'request' }, requiresEvidence: false, decision: false, legacyName: 'Site Visit' },
-  { key: 'ph_discussion', seq: 3, name: 'Project Head Discussion', group: 'dependency', optional: true, roles: ['admin', 'coordinator', 'project_head'], responsibleLabel: 'Project Head', sla: { type: 'same_day_at', time: '18:00', anchor: 'previous' }, requiresEvidence: false, decision: true, flag: 'requires_ph_discussion', legacyName: 'Discussion with Project Head' },
-  { key: 'material', seq: 4, name: 'Material / Dependency', group: 'dependency', optional: true, roles: ['admin', 'coordinator', 'store'], responsibleLabel: 'Store', sla: { type: 'add_working_days', days: 1, anchor: 'previous' }, requiresEvidence: false, decision: true, flag: 'requires_material', legacyName: 'Material Update' },
-  { key: 'permission', seq: 5, name: 'Permission / Approval', group: 'dependency', optional: true, roles: ['admin', 'coordinator', 'approver'], responsibleLabel: 'Approver', sla: { type: 'same_day_at', time: '11:00', anchor: 'previous' }, requiresEvidence: false, decision: true, flag: 'requires_permission', legacyName: 'Get Permission' },
-  { key: 'work_started', seq: 6, name: 'Work Started', group: 'execution', optional: false, roles: ['admin', 'coordinator', 'engineer'], responsibleLabel: 'Assigned Engineer', sla: { type: 'next_day_at', time: '10:00', anchor: 'previous' }, requiresEvidence: false, decision: false },
-  { key: 'work_completed', seq: 7, name: 'Work Completed', group: 'execution', optional: false, roles: ['admin', 'coordinator', 'engineer'], responsibleLabel: 'Assigned Engineer', sla: { type: 'add_working_days', days: 7, anchor: 'request' }, requiresEvidence: true, decision: false, legacyName: 'Work Completion' },
-  { key: 'closed', seq: 8, name: 'Closed', group: 'closure', optional: false, roles: ['admin', 'coordinator'], responsibleLabel: 'Process Coordinator', sla: { type: 'same_day_at', time: '18:00', anchor: 'previous' }, requiresEvidence: false, decision: false },
+  { key: 'material', seq: 3, name: 'Material / Dependency', group: 'dependency', optional: true, roles: ['admin', 'coordinator', 'store'], responsibleLabel: 'Store', sla: { type: 'add_working_days', days: 1, anchor: 'previous' }, requiresEvidence: false, decision: true, flag: 'requires_material', legacyName: 'Material Update' },
+  { key: 'permission', seq: 4, name: 'Permission / Approval', group: 'dependency', optional: true, roles: ['admin', 'coordinator', 'approver'], responsibleLabel: 'Approver', sla: { type: 'same_day_at', time: '11:00', anchor: 'previous' }, requiresEvidence: false, decision: true, flag: 'requires_permission', legacyName: 'Get Permission' },
+  { key: 'work_started', seq: 5, name: 'Work Started', group: 'execution', optional: false, roles: ['admin', 'coordinator', 'engineer'], responsibleLabel: 'Assigned Engineer', sla: { type: 'next_day_at', time: '10:00', anchor: 'previous' }, requiresEvidence: false, decision: false },
+  { key: 'work_completed', seq: 6, name: 'Work Completed', group: 'execution', optional: false, roles: ['admin', 'coordinator', 'engineer'], responsibleLabel: 'Assigned Engineer', sla: { type: 'add_working_days', days: 7, anchor: 'request' }, requiresEvidence: true, decision: false, legacyName: 'Work Completion' },
+  { key: 'closed', seq: 7, name: 'Closed', group: 'closure', optional: false, roles: ['admin', 'coordinator'], responsibleLabel: 'Process Coordinator', sla: { type: 'same_day_at', time: '18:00', anchor: 'previous' }, requiresEvidence: false, decision: false },
 ];
 
 export const STAGE_KEYS = DEFAULT_STAGES.map((s) => s.key);
 
 /** Stages that exist in the legacy FMS sheet, in sheet order. */
 export const LEGACY_STAGE_KEYS: StageKey[] = [
-  'site_visit', 'ph_discussion', 'material', 'permission', 'work_completed',
+  'site_visit', 'material', 'permission', 'work_completed',
 ];
 
 export const WEEKLY_OFF = [0]; // Sunday, as in the FMS sheet
@@ -140,7 +139,6 @@ export interface StageLike {
 const STATUS_BY_GROUP: Record<StageKey, RequestStatus> = {
   created: 'open',
   site_visit: 'in_progress',
-  ph_discussion: 'pending_approval',
   material: 'pending_approval',
   permission: 'pending_approval',
   work_started: 'in_progress',

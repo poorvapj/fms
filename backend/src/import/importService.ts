@@ -279,7 +279,6 @@ export async function commitImport(uploadId: string, body: any, user: AuthUser) 
         priority: rec.priority, requested_at: rec.requested_at, requester_name: rec.requester_name, requester_email: rec.requester_email,
         work_type: rec.work_type, property_no: rec.property_no, reason: rec.reason, target_date: rec.target_date,
         site_engineer_id: await idOf('engineers', rec.site_engineer), assigned_engineer_id: await idOf('engineers', rec.assigned_engineer),
-        requires_ph_discussion: rec.stages.some((s) => s.key === 'ph_discussion' && s.status !== 'skipped') ? 1 : 0,
         requires_material: rec.stages.some((s) => s.key === 'material' && s.status !== 'skipped') ? 1 : 0,
         requires_permission: rec.stages.some((s) => s.key === 'permission' && s.status !== 'skipped') ? 1 : 0,
         held_at: rec.hold_reason ? heldAt : null, hold_reason: rec.hold_reason, cancelled_at: rec.cancel_reason ? heldAt : null, cancel_reason: rec.cancel_reason,
