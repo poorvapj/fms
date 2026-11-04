@@ -283,6 +283,7 @@ export async function commitImport(uploadId: string, body: any, user: AuthUser) 
         requires_permission: rec.stages.some((s) => s.key === 'permission' && s.status !== 'skipped') ? 1 : 0,
         held_at: rec.hold_reason ? heldAt : null, hold_reason: rec.hold_reason, cancelled_at: rec.cancel_reason ? heldAt : null, cancel_reason: rec.cancel_reason,
         closure_category: rec.closure_category, closure_note: rec.closure_note, verified_by_name: rec.verified_by_name, import_row_no: rec.row_no,
+        pc_remark: rec.pc_remark,
         stages, updated_at: now,
       };
       let requestId: number;

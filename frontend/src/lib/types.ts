@@ -70,6 +70,7 @@ export interface RequestRow {
   location_detail?: string | null;
   property_no?: string | null;
   work_type?: string | null;
+  pc_remark: string | null;
 }
 
 export interface Stage {

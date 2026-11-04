@@ -134,7 +134,7 @@ export function JobCards() {
         {loading && !data ? <Loading /> : data && (
           <>
             <div style={{ opacity: loading ? 0.6 : 1 }}>
-              <JobCardTable rows={data.rows} sort={{ sort: v.sort, dir: v.dir as 'asc' | 'desc' }} onSort={(s) => f.set({ sort: s.sort, dir: s.dir })} />
+              <JobCardTable rows={data.rows} sort={{ sort: v.sort, dir: v.dir as 'asc' | 'desc' }} onSort={(s) => f.set({ sort: s.sort, dir: s.dir })} onUpdate={reload} />
             </div>
             <Pager page={data.page} pageSize={data.page_size} total={data.total} onPage={(p) => f.set({ page: String(p) })} />
           </>

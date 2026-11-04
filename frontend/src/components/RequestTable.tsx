@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api, errorText } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { cap, fmtDateTime } from '../lib/format';
 import type { RequestRow } from '../lib/types';
 import { Empty, OverdueBadge, StatusBadge } from './ui';
@@ -15,13 +18,74 @@ function Th({ label, k, sort, onSort }: { label: string; k?: string; sort?: Sort
   );
 }
 
-/** Job card list: Job Card · Project · Location · Category · Priority · Status · Engineer · Next Action · Due */
-export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards match', compact }: {
-  rows: RequestRow[]; sort?: SortState; onSort?: (s: SortState) => void; emptyText?: string; compact?: boolean;
+/** Inline "resolve / hold" shortcut for a row, so the coordinator doesn't have to open the job card. */
+function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
+  const [kind, setKind] = useState<'' | 'resolved' | 'not_needed' | 'hold'>('');
+  const [remarks, setRemarks] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const live = !['closed', 'cancelled'].includes(row.status);
+  if (!live) return <span className="muted small">—</span>;
+
+  const apply = async () => {
+    if (!kind || !remarks.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === 'resolved') await api.post(`/requests/${row.id}/fast-close`, { reason: remarks, closure_category: 'Work Done' });
+      else if (kind === 'not_needed') await api.post(`/requests/${row.id}/fast-close`, { reason: remarks, closure_category: 'Not Feasible' });
+      else await api.post(`/requests/${row.id}/hold`, { reason: remarks });
+      setKind('');
+      setRemarks('');
+      onDone();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const kindColor = ({ resolved: 'var(--good)', not_needed: 'var(--bad)', hold: 'var(--warn)' } as Record<string, string>)[kind];
+
+  return (
+    <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+      <select
+        className="select" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} disabled={busy}
+        style={{ width: 100, height: 30, ...(kindColor ? { borderColor: kindColor, color: kindColor, fontWeight: 600 } : {}) }}
+      >
+        <option value="">Select…</option>
+        <option value="resolved">Resolved</option>
+        <option value="not_needed">Not Needed</option>
+        <option value="hold">Hold</option>
+      </select>
+      <input className="input" placeholder="Remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={busy} style={{ width: 110, height: 30 }} title={error ?? undefined} />
+      <button className="btn sm" disabled={busy || !kind || !remarks.trim()} onClick={apply} title={error ?? 'Apply'}>{busy ? '…' : 'Go'}</button>
+    </div>
+  );
+}
+
+/**
+ * Colour a row by what its remark says — mirrors the colour-coding used on the legacy FMS sheet
+ * (green = done, red = not possible / rejected, orange = on hold / awaiting a decision).
+ */
+function remarkTone(remark: string | null): { bg: string; text: string } | null {
+  if (!remark) return null;
+  const t = remark.toLowerCase();
+  if (/not possible|not feasible|wrong complaint|rejected/.test(t)) return { bg: 'var(--bad-bg)', text: 'var(--bad)' };
+  if (/\bdone\b|resolved|work done|completed|fixed/.test(t)) return { bg: 'var(--good-bg)', text: 'var(--good)' };
+  if (/hold|will decide|pending|requirement|dalegi|raised|driver pending/.test(t)) return { bg: 'var(--warn-bg)', text: 'var(--warn)' };
+  return null;
+}
+
+/** Job card list: Job Card · Project · Location · Category · Priority · Status · Next Action · Due */
+export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards match', compact, onUpdate }: {
+  rows: RequestRow[]; sort?: SortState; onSort?: (s: SortState) => void; emptyText?: string; compact?: boolean; onUpdate?: () => void;
 }) {
   const nav = useNavigate();
+  const { can } = useAuth();
   if (!rows.length) return <Empty title={emptyText} />;
   const closed = (r: RequestRow) => r.status === 'closed' || r.status === 'cancelled';
+  const showQuickAction = !compact && onUpdate && can('request.manage');
   return (
     <div className="table-wrap">
       <table className={`table${compact ? ' compact' : ''}`}>
@@ -33,31 +97,40 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
             <Th label="Category" k="category" sort={sort} onSort={onSort} />
             {!compact && <Th label="Priority" k="priority" sort={sort} onSort={onSort} />}
             <Th label="Status" k="status" sort={sort} onSort={onSort} />
-            <Th label="Engineer" k="engineer" sort={sort} onSort={onSort} />
             <th>Next Action</th>
             <Th label="Due" k="planned" sort={sort} onSort={onSort} />
+            {!compact && <th>Remarks</th>}
+            {showQuickAction && <th>Resolve / Hold</th>}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="clickable" onClick={() => nav(`/job-cards/${r.id}`)}>
-              <td className="nowrap"><a href={`/job-cards/${r.id}`} onClick={(e) => { e.preventDefault(); nav(`/job-cards/${r.id}`); }} style={{ fontWeight: 600 }}>{r.request_no}</a></td>
-              <td>{r.property_name}</td>
-              <td className="title-cell">
-                <div>{r.property_no || r.location_detail || <span className="muted">—</span>}</div>
-                <div className="t muted small" title={r.title}>{r.title}</div>
-              </td>
-              <td>{r.category_name}</td>
-              {!compact && <td>{cap(r.priority)}</td>}
-              <td><StatusBadge status={r.status} /></td>
-              <td>{r.engineer_name ?? r.site_engineer_name ?? <span className="muted">—</span>}</td>
-              <td>{closed(r) ? <span className="muted">—</span> : r.current_stage_name}</td>
-              <td className="nowrap small">
-                {closed(r) || !r.current_stage_planned_at ? <span className="muted">—</span> : fmtDateTime(r.current_stage_planned_at)}
-                {r.is_overdue && <div style={{ marginTop: 3 }}><OverdueBadge minutes={r.overdue_minutes} /></div>}
-              </td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const tone = !compact ? remarkTone(r.pc_remark) : null;
+            return (
+              <tr key={r.id} className="clickable" onClick={() => nav(`/job-cards/${r.id}`)} style={tone ? { background: tone.bg } : undefined}>
+                <td className="nowrap"><a href={`/job-cards/${r.id}`} onClick={(e) => { e.preventDefault(); nav(`/job-cards/${r.id}`); }} style={{ fontWeight: 600 }}>{r.request_no}</a></td>
+                <td>{r.property_name}</td>
+                <td className="title-cell">
+                  <div>{r.property_no || r.location_detail || <span className="muted">—</span>}</div>
+                  <div className="t muted small" title={r.title}>{r.title}</div>
+                </td>
+                <td>{r.category_name}</td>
+                {!compact && <td>{cap(r.priority)}</td>}
+                <td><StatusBadge status={r.status} /></td>
+                <td>{closed(r) ? <span className="muted">—</span> : r.current_stage_name}</td>
+                <td className="nowrap small">
+                  {closed(r) || !r.current_stage_planned_at ? <span className="muted">—</span> : fmtDateTime(r.current_stage_planned_at)}
+                  {r.is_overdue && <div style={{ marginTop: 3 }}><OverdueBadge minutes={r.overdue_minutes} /></div>}
+                </td>
+                {!compact && (
+                  <td className="small" style={tone ? { color: tone.text, fontWeight: 600 } : undefined}>
+                    {r.pc_remark || <span className="muted">—</span>}
+                  </td>
+                )}
+                {showQuickAction && <td><QuickAction row={r} onDone={onUpdate} /></td>}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

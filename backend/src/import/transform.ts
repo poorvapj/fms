@@ -52,6 +52,8 @@ export interface PlannedRecord {
   completion_images: string[];
   closure_note: string | null;
   closure_category: string | null;
+  /** The sheet's free-text "Remarks (Regarding Job Card)" column, kept visible even for jobs still open. */
+  pc_remark: string | null;
   verified_by_name: string | null;
   site_engineer: string | null;
   assigned_engineer: string | null;
@@ -278,6 +280,7 @@ export function transformRow(
       completion_images: req.completion_images ? urls(req.completion_images) : [],
       closure_note: closureNote,
       closure_category: workDone ? (closureCategory === 'On Hold' ? 'Work Done' : closureCategory ?? 'Work Done') : null,
+      pc_remark: remarks,
       verified_by_name: verifiedBy,
       site_engineer: siteEngineer,
       assigned_engineer: assignedEngineer,

@@ -76,7 +76,7 @@ export function buildFilter(f: Record<string, any>, user: AuthUser): { filter: F
 export const LIST_PROJECTION = {
   request_no: 1, source: 1, title: 1, priority: 1, status: 1, requested_at: 1, target_date: 1, location_detail: 1, property_no: 1,
   work_type: 1, current_stage_key: 1, current_stage_planned_at: 1, completed_at: 1, closed_at: 1, hold_reason: 1, property_id: 1,
-  category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1, held_at: 1,
+  category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1, held_at: 1, pc_remark: 1,
 };
 
 type Names = Awaited<ReturnType<typeof masterNames>>;
@@ -94,6 +94,7 @@ export function listRow(r: Doc, names: Names, now: string) {
     assigned_engineer_id: r.assigned_engineer_id ?? null, engineer_name: names.engineers.get(r.assigned_engineer_id) ?? null,
     site_engineer_id: r.site_engineer_id ?? null, site_engineer_name: names.engineers.get(r.site_engineer_id) ?? null,
     is_overdue: overdue, overdue_minutes: overdue ? diffMinutes(now, r.current_stage_planned_at) : null,
+    pc_remark: r.pc_remark ?? null,
   };
 }
 
@@ -273,7 +274,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
       status: 'open', current_stage_key: null, current_stage_planned_at: null, site_engineer_id: null, assigned_engineer_id: null,
       requires_material: null, requires_permission: null, hold_reason: null, held_at: null,
       cancelled_at: null, cancel_reason: null, completed_at: null, closed_at: null, closure_category: null, closure_note: null,
-      verified_by_name: null, public_token: token, requester_ip: opts.ip ?? null, import_batch_id: null, import_row_no: null,
+      verified_by_name: null, public_token: token, requester_ip: opts.ip ?? null, import_batch_id: null, import_row_no: null, pc_remark: null,
       modified_in_app: false, version: 1, created_at: requestedAt, updated_at: requestedAt,
       stages: newStages(requestedAt, user?.id ?? null, requesterName, propertyId),
     };
