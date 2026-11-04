@@ -71,9 +71,9 @@ function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
 function remarkTone(remark: string | null): { bg: string; text: string } | null {
   if (!remark) return null;
   const t = remark.toLowerCase();
-  if (/not possible|not feasible|wrong complaint|rejected/.test(t)) return { bg: 'var(--bad-bg)', text: 'var(--bad)' };
-  if (/\bdone\b|resolved|work done|completed|fixed/.test(t)) return { bg: 'var(--good-bg)', text: 'var(--good)' };
-  if (/hold|will decide|pending|requirement|dalegi|raised|driver pending/.test(t)) return { bg: 'var(--warn-bg)', text: 'var(--warn)' };
+  if (/not possible|not feasible|wrong complaint|rejected/.test(t)) return { bg: '#fca5a1', text: '#7a1712' };
+  if (/\bdone\b|resolved|work done|completed|fixed/.test(t)) return { bg: '#86efac', text: '#0b4a24' };
+  if (/hold|will decide|pending|requirement|dalegi|raised|driver pending/.test(t)) return { bg: '#fdba74', text: '#7a3b06' };
   return null;
 }
 
