@@ -41,8 +41,20 @@ function fmtNow(): string {
   return `${get('day')}/${get('month')}/${get('year')} ${get('hour') === '24' ? '00' : get('hour')}:${get('minute')}:${get('second')}`;
 }
 
+// Throttle: this endpoint has no secret (Apps Script can't keep one private either), so it's
+// rate-limited by IP the same way the public complaint form is — 20 per IP per day.
+const hits = new Map<string, number[]>();
+function throttle(ip: string) {
+  const now = Date.now();
+  const list = (hits.get(ip) ?? []).filter((t) => now - t < 86400000);
+  if (list.length >= 20) throw new HttpError(429, 'Too many submissions from this source today');
+  list.push(now);
+  hits.set(ip, list);
+}
+
 /** Builds a single-row legacy-format CSV and runs it through the standard import pipeline. */
-export async function intakeFormSubmission(body: FormSubmission) {
+export async function intakeFormSubmission(body: FormSubmission, ip: string) {
+  throttle(ip);
   const property = String(body.property ?? '').trim();
   const workCategory = String(body.work_category ?? '').trim();
   const narration = String(body.narration ?? '').trim();

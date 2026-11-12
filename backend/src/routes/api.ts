@@ -24,7 +24,7 @@ import {
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
 import { nowLocal } from '../utils/dates.ts';
-import { badRequest, HttpError, notFound, toCsv } from '../utils/http.ts';
+import { badRequest, notFound, toCsv } from '../utils/http.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
 
 /** True for the "Open" chip/view's exact filter combo — nothing else narrowed. */
@@ -54,8 +54,7 @@ api.get('/public/track/:token', async (req, res) => { res.json(await trackPublic
 
 // Called by the Apps Script trigger on the "Pending Complaint" Google Form's linked Sheet, on every new submission.
 api.post('/public/form-intake', async (req, res) => {
-  if (!config.formIntakeSecret || req.body?.secret !== config.formIntakeSecret) throw new HttpError(401, 'Invalid secret');
-  res.status(201).json(await intakeFormSubmission(req.body ?? {}));
+  res.status(201).json(await intakeFormSubmission(req.body ?? {}, clientIp(req)));
 });
 
 // ---------------------------------------------------------------- auth

@@ -55,6 +55,4 @@ export const config = {
   /** Slack bot for site-visit Yes/No notifications (backend/.env). Unset disables the feature entirely. */
   slackBotToken: process.env.SLACK_BOT_TOKEN ?? '',
   slackSigningSecret: process.env.SLACK_SIGNING_SECRET ?? '',
-  /** Shared secret the Pending Complaint Google Form's Apps Script trigger sends with each submission. */
-  formIntakeSecret: process.env.FORM_INTAKE_SECRET ?? '',
 };
