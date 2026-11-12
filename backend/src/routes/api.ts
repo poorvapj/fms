@@ -15,6 +15,7 @@ import {
 import { createReasonCode, listReasonCodes, updateReasonCode } from '../services/reasonCodes.ts';
 import { createSlaRule, deleteSlaRule, listSlaRules } from '../services/slaRules.ts';
 import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../services/publicService.ts';
+import { intakeFormSubmission } from '../services/formIntake.ts';
 import { legacyPendingSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
 import { buildFilter, createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
@@ -23,7 +24,7 @@ import {
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
 import { nowLocal } from '../utils/dates.ts';
-import { badRequest, notFound, toCsv } from '../utils/http.ts';
+import { badRequest, HttpError, notFound, toCsv } from '../utils/http.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
 
 /** True for the "Open" chip/view's exact filter combo — nothing else narrowed. */
@@ -50,6 +51,12 @@ api.post('/public/requests', evidenceUpload.array('images', 10), async (req, res
   res.status(201).json(await submitPublicRequest(req.body ?? {}, files(req), clientIp(req)));
 });
 api.get('/public/track/:token', async (req, res) => { res.json(await trackPublicRequest(String(req.params.token))); });
+
+// Called by the Apps Script trigger on the "Pending Complaint" Google Form's linked Sheet, on every new submission.
+api.post('/public/form-intake', async (req, res) => {
+  if (!config.formIntakeSecret || req.body?.secret !== config.formIntakeSecret) throw new HttpError(401, 'Invalid secret');
+  res.status(201).json(await intakeFormSubmission(req.body ?? {}));
+});
 
 // ---------------------------------------------------------------- auth
 api.post('/auth/login', async (req, res) => {
