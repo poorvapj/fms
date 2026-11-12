@@ -77,7 +77,7 @@ function remarkTone(remark: string | null): { bg: string; text: string } | null 
   return null;
 }
 
-/** Job card list: Job Card · Project · Location · Category · Priority · Status · Next Action · Due */
+/** Job card list: Job Card · Project · Narration · Category · Priority · Status · Next Action · Due */
 export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards match', compact, onUpdate }: {
   rows: RequestRow[]; sort?: SortState; onSort?: (s: SortState) => void; emptyText?: string; compact?: boolean; onUpdate?: () => void;
 }) {
@@ -93,7 +93,7 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
           <tr>
             <Th label="Job Card" k="request_no" sort={sort} onSort={onSort} />
             <Th label="Project" k="property" sort={sort} onSort={onSort} />
-            <th>Location</th>
+            <th>Narration</th>
             <Th label="Category" k="category" sort={sort} onSort={onSort} />
             {!compact && <Th label="Priority" k="priority" sort={sort} onSort={onSort} />}
             <Th label="Status" k="status" sort={sort} onSort={onSort} />
