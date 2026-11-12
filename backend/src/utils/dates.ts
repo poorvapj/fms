@@ -16,10 +16,20 @@ export function toMs(value: string | null | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** Current local wall-clock time. */
+const IST_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+});
+
+/**
+ * Current India (IST) wall-clock time, regardless of the host/server's own time zone.
+ * The app's users and data are India-only, so "local" always means Asia/Kolkata — not wherever
+ * the Node process happens to be running (e.g. a UTC server would otherwise log everything ~5.5h behind).
+ */
 export function nowLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const parts = Object.fromEntries(IST_PARTS.formatToParts(new Date()).map((p) => [p.type, p.value]));
+  // "24" at midnight is a known Intl/ICU quirk for hour12:false — normalise to "00".
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`;
 }
 
 export function todayLocal(): string {
