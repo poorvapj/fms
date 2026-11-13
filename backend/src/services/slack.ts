@@ -29,6 +29,18 @@ async function postToUrl(url: string, body: Record<string, unknown>) {
   await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 }
 
+const FORM_INTAKE_CHANNEL = 'C0AVD30QM33';
+
+/** A new pending job card was auto-created from a Google Form submission — post a confirmation. */
+export async function notifyFormIntake(r: RequestDoc) {
+  if (!slackEnabled()) return;
+  const names = await masterNames();
+  const property = names.properties.get(r.property_id) ?? '—';
+  const category = names.categories.get(r.category_id) ?? '—';
+  const text = `*New pending job card created from Form*\n*Job:* ${r.request_no}\n*Property:* ${property}\n*Category:* ${category}\n*Narration:* ${r.description}`;
+  await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text });
+}
+
 /** Site visit stage just went active — DM the assigned site engineer if we have their Slack ID, once. */
 export async function notifySiteVisitIfNeeded(r: RequestDoc) {
   if (!slackEnabled()) return;
