@@ -257,6 +257,19 @@ export async function fastCloseRequest(requestId: number, body: any, user: AuthU
   await logEvent(requestId, 'stage_completed', `Closed early (${category}): ${reason}`, { stageKey: 'closed', user });
 }
 
+/** Correct the remark left when a job card was closed, without reopening it or touching dates. */
+export async function updateClosureNote(requestId: number, body: any, user: AuthUser) {
+  requireManage(user);
+  const r = await loadRequest(requestId);
+  if (r.status !== 'closed') throw conflict('Job card is not closed');
+  const note = requiredStr(body.closure_note, 'Remarks', 2000);
+  const before = r.closure_note;
+  r.closure_note = note;
+  stageOf(r, 'closed').comments = note;
+  await saveRequest(r);
+  await logEvent(requestId, 'comment', `Closing remarks corrected: "${before ?? ''}" → "${note}"`, { stageKey: 'closed', user });
+}
+
 export async function reopenRequest(requestId: number, body: any, user: AuthUser) {
   requireManage(user);
   const r = await loadRequest(requestId);

@@ -71,6 +71,8 @@ export interface RequestRow {
   property_no?: string | null;
   work_type?: string | null;
   pc_remark: string | null;
+  closure_note: string | null;
+  closure_category: string | null;
 }
 
 export interface Stage {
