@@ -250,7 +250,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
   const workType = normalizeWorkType(body.work_type);
   if (!workType) throw badRequest('Select the type of work (New Work / Maintenance)');
   const propertyNo = requiredStr(body.property_no, 'Property No.', 120);
-  const reason = source === 'public' ? requiredStr(body.reason, 'Reason', 2000) : str(body.reason, 2000);
+  const reason = str(body.reason, 2000);
   if (source === 'public') {
     if (!email) throw badRequest('Email is required');
     if (!target) throw badRequest('Work completion date is required');

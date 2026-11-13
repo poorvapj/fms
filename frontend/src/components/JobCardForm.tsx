@@ -41,7 +41,6 @@ export function missingKeys(v: JobCardValues, images: File[], { email }: { email
   if (!v.target_date) miss.push('target_date');
   if (!images.length) miss.push('images');
   if (!v.description.trim()) miss.push('description');
-  if (email && !v.reason.trim()) miss.push('reason');
   return miss;
 }
 
@@ -92,7 +91,7 @@ export function JobCardForm({ value, onChange, images, onImages, options, public
     q('images', 'Image of Location', true, <ImagePicker files={images} onChange={onImages} max={10} onError={onError} label="Add photo" />,
       { full: true, help: 'Upload up to 10 photos (max 15 MB each).' }),
     q('description', 'Narration', true, <textarea className="input" value={value.description} onChange={set('description')} maxLength={5000} placeholder="Describe the work / problem" />, { full: true }),
-    q('reason', 'Reason', !!publicMode, <input className="input" value={value.reason} onChange={set('reason')} maxLength={2000} placeholder="Why is this work needed?" />, { full: true }),
+    !publicMode ? q('reason', 'Reason', false, <input className="input" value={value.reason} onChange={set('reason')} maxLength={2000} placeholder="Why is this work needed?" />, { full: true }) : null,
   ];
 
   return <div className="form-grid">{questions}</div>;
