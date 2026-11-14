@@ -16,23 +16,15 @@ import { createReasonCode, listReasonCodes, updateReasonCode } from '../services
 import { createSlaRule, deleteSlaRule, listSlaRules } from '../services/slaRules.ts';
 import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../services/publicService.ts';
 import { intakeFormSubmission } from '../services/formIntake.ts';
-import { legacyPendingSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
-import { buildFilter, createRequest, exportRequests, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
+import { legacyAllSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
+import { buildFilter, createRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
   addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
-import { nowLocal } from '../utils/dates.ts';
 import { badRequest, notFound, toCsv } from '../utils/http.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
-
-/** True for the "Open" chip/view's exact filter combo — nothing else narrowed. */
-function isOpenOnlyFilter(q: Record<string, any>): boolean {
-  const statuses = String(q.status ?? '').split(',').map((s) => s.trim()).filter(Boolean).sort();
-  const rest = ['stage', 'overdue', 'priority', 'engineer_id', 'source', 'q', 'from', 'to', 'property_id', 'category_id'];
-  return statuses.join(',') === 'active,on_hold' && rest.every((k) => !q[k]);
-}
 
 export const api = Router();
 
@@ -106,29 +98,15 @@ api.get('/coordinator/queue', requirePermission('request.manage'), async (req, r
 // ---------------------------------------------------------------- job cards (/requests)
 api.get('/requests', async (req, res) => { res.json(await listRequests(req.query, req.user!)); });
 api.get('/requests/export.csv', async (req, res) => {
-  if (isOpenOnlyFilter(req.query)) {
-    const { filter } = buildFilter(req.query, req.user!);
-    const [rows, names] = await Promise.all([
-      col.requests().find(filter, { projection: REPORT_PROJECTION }).sort({ requested_at: 1 }).toArray(),
-      masterNames(),
-    ]);
-    const section = await legacyPendingSection(rows, names, nowLocal());
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="open-job-cards.csv"');
-    return void res.send(toCsv(section.columns, section.rows));
-  }
-  const rows = await exportRequests(req.query, req.user!);
-  const cols = [
-    { key: 'request_no', label: 'Job Card' }, { key: 'requested_at', label: 'Raised' }, { key: 'property_name', label: 'Property' },
-    { key: 'property_no', label: 'Property No.' }, { key: 'category_name', label: 'Category' }, { key: 'title', label: 'Title' },
-    { key: 'priority', label: 'Priority' }, { key: 'status', label: 'Status' }, { key: 'current_stage_name', label: 'Current Stage' },
-    { key: 'current_stage_planned_at', label: 'Stage Due' }, { key: 'is_overdue', label: 'Overdue' }, { key: 'engineer_name', label: 'Engineer' },
-    { key: 'site_engineer_name', label: 'Site Engineer' }, { key: 'target_date', label: 'Target Date' }, { key: 'completed_at', label: 'Completed' },
-    { key: 'source', label: 'Source' },
-  ];
+  const { filter } = buildFilter(req.query, req.user!);
+  const [rows, names] = await Promise.all([
+    col.requests().find(filter, { projection: REPORT_PROJECTION }).sort({ requested_at: 1 }).toArray(),
+    masterNames(),
+  ]);
+  const section = await legacyAllSection(rows, names);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="job-cards.csv"');
-  res.send(toCsv(cols, rows.map((r) => ({ ...r, is_overdue: r.is_overdue ? 'Yes' : '' }))));
+  res.send(toCsv(section.columns, section.rows));
 });
 api.post('/requests', requirePermission('request.create'), evidenceUpload.array('images', 10), async (req, res) => {
   res.status(201).json(await createRequest(req.body ?? {}, req.user!, files(req)));

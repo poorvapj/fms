@@ -176,20 +176,18 @@ export const LEGACY_PENDING_COLUMNS: Column[] = [
   { key: 'narration', label: 'Narration' }, { key: 'sheet_row_no', label: 'Row No.', type: 'number' }, { key: 'remark', label: 'Remark' },
 ];
 
-/** Open job cards in the original FMS sheet column layout — used by the Open Job Aging report and the Job Cards "Open" CSV export. */
-export async function legacyPendingSection(rows: Doc[], names: Names, now: string): Promise<Section> {
-  const open = rows.filter((r) => LIVE_STATUSES.includes(r.status)).sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
+async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unknown>[]> {
   const atts = await col.attachments().find(
-    { request_id: { $in: open.map((r) => r._id) }, stage_key: 'created' },
+    { request_id: { $in: list.map((r) => r._id) }, stage_key: 'created' },
     { projection: { request_id: 1, url: 1, file_name: 1, created_at: 1 } },
   ).sort({ created_at: 1 }).toArray();
   const imagesByRequest = new Map<number, string[]>();
   for (const a of atts) {
-    const list = imagesByRequest.get(a.request_id) ?? [];
-    list.push(a.url ?? `[uploaded file: ${a.file_name ?? a._id}]`);
-    imagesByRequest.set(a.request_id, list);
+    const images = imagesByRequest.get(a.request_id) ?? [];
+    images.push(a.url ?? `[uploaded file: ${a.file_name ?? a._id}]`);
+    imagesByRequest.set(a.request_id, images);
   }
-  const out = open.map((r, i) => {
+  return list.map((r, i) => {
     const imgs = imagesByRequest.get(r._id) ?? [];
     const remark = stage(r, 'closed')?.comments || r.closure_note || r.hold_reason || null;
     return {
@@ -198,5 +196,18 @@ export async function legacyPendingSection(rows: Doc[], names: Names, now: strin
       narration: r.description ?? '', sheet_row_no: r.import_row_no ?? '', remark: remark ?? '',
     };
   });
+}
+
+/** Open job cards in the original FMS sheet column layout — used by the Open Job Aging report. */
+export async function legacyPendingSection(rows: Doc[], names: Names, now: string): Promise<Section> {
+  const open = rows.filter((r) => LIVE_STATUSES.includes(r.status)).sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
+  const out = await legacyRows(open, names);
   return { title: `Open Job Aging (${out.length})`, columns: LEGACY_PENDING_COLUMNS, rows: out };
+}
+
+/** Any set of job cards (open or closed) in the original FMS sheet column layout — used by the Job Cards CSV export, so it reads the same as the old legacy sheet regardless of which filter/tab produced it. */
+export async function legacyAllSection(rows: Doc[], names: Names): Promise<Section> {
+  const sorted = [...rows].sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
+  const out = await legacyRows(sorted, names);
+  return { title: `Job Cards (${out.length})`, columns: LEGACY_PENDING_COLUMNS, rows: out };
 }

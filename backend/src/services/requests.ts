@@ -131,11 +131,6 @@ export async function listRequests(query: Record<string, any>, user: AuthUser) {
   return { total, page, page_size: pageSize, rows: rows.map((r) => listRow(r, names, now)) };
 }
 
-export async function exportRequests(query: Record<string, any>, user: AuthUser) {
-  const { filter } = buildFilter(query, user);
-  return findRows(filter, { requested_at: -1 }, 50000);
-}
-
 export async function loadRequest(id: number): Promise<RequestDoc> {
   const r = await col.requests().findOne({ _id: id });
   if (!r) throw notFound('Job card');
