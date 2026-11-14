@@ -59,7 +59,7 @@ function listBase(r: Doc, names: Names) {
 export const PROJECTION = {
   request_no: 1, requested_at: 1, title: 1, description: 1, status: 1, property_id: 1, category_id: 1, assigned_engineer_id: 1,
   site_engineer_id: 1, current_stage_key: 1, current_stage_planned_at: 1, closure_category: 1, closure_note: 1, target_date: 1,
-  source: 1, import_row_no: 1, completed_at: 1, stages: 1, hold_reason: 1,
+  source: 1, import_row_no: 1, completed_at: 1, stages: 1, hold_reason: 1, pc_remark: 1,
 };
 
 export async function runReport(key: string, query: Record<string, any>, user: AuthUser): Promise<Report> {
@@ -189,7 +189,7 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
   }
   return list.map((r, i) => {
     const imgs = imagesByRequest.get(r._id) ?? [];
-    const remark = stage(r, 'closed')?.comments || r.closure_note || r.hold_reason || null;
+    const remark = stage(r, 'closed')?.comments || r.closure_note || r.hold_reason || r.pc_remark || null;
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
       work_category: names.categories.get(r.category_id) ?? '', image_1: imgs[0] ?? '', image_2: imgs[1] ?? '',
