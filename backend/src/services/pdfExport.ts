@@ -47,8 +47,10 @@ export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>
       drawHeader();
     }
     const y = doc.y;
+    const bg = r._bg as string | null | undefined;
+    if (bg) doc.rect(startX, y, tableWidth, h).fill(bg);
     let x = startX;
-    doc.font('Helvetica').fontSize(7);
+    doc.font('Helvetica').fontSize(7).fillColor('black');
     for (let i = 0; i < columns.length; i++) {
       doc.rect(x, y, widths[i], h).stroke();
       doc.text(String(r[columns[i].key] ?? ''), x + 3, y + 3, { width: widths[i] - 6, height: h - 6 });
@@ -56,6 +58,5 @@ export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>
     }
     doc.y = y + h;
   }
-  void tableWidth;
   return doc;
 }

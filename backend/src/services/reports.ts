@@ -176,6 +176,23 @@ export const LEGACY_PENDING_COLUMNS: Column[] = [
   { key: 'narration', label: 'Narration' }, { key: 'sheet_row_no', label: 'Row No.', type: 'number' }, { key: 'remark', label: 'Remark' },
 ];
 
+const BAD_CLOSURE = /not feasible|wrong complaint|rejected/i;
+
+/** Mirrors the Job Cards table's row colouring (RequestTable.tsx) so the PDF export looks the same. */
+function remarkBg(remark: string | null): string | null {
+  if (!remark) return null;
+  const t = remark.toLowerCase();
+  if (/not possible|not feasible|wrong complaint|rejected/.test(t)) return '#fca5a1';
+  if (/\bdone\b|resolved|work done|completed|fixed/.test(t)) return '#86efac';
+  if (/hold|will decide|pending|requirement|dalegi|raised|driver pending/.test(t)) return '#fdba74';
+  return null;
+}
+
+function rowBg(r: Doc, remark: string | null): string | null {
+  if (r.status === 'closed') return BAD_CLOSURE.test(r.closure_category ?? '') ? '#fca5a1' : '#86efac';
+  return remarkBg(remark);
+}
+
 async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unknown>[]> {
   const atts = await col.attachments().find(
     { request_id: { $in: list.map((r) => r._id) }, stage_key: 'created' },
@@ -194,6 +211,7 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
       work_category: names.categories.get(r.category_id) ?? '', image_1: imgs[0] ?? '', image_2: imgs[1] ?? '',
       narration: r.description ?? '', sheet_row_no: r.import_row_no ?? '', remark: remark ?? '',
+      _bg: rowBg(r, remark),
     };
   });
 }
