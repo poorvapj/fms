@@ -1,6 +1,7 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
+import { WORK_TYPES } from '../domain/workflow.ts';
 import { masterNames } from './masters.ts';
 import { completeStage } from './stages.ts';
 import { logEvent } from './events.ts';
@@ -31,14 +32,36 @@ async function postToUrl(url: string, body: Record<string, unknown>) {
 
 const FORM_INTAKE_CHANNEL = 'C0AVD30QM33';
 
-/** A new pending job card was auto-created from a Google Form submission — post a confirmation. */
-export async function notifyFormIntake(r: RequestDoc) {
+/** "2026-11-13T18:25:31" -> "11/13/2026 18:25:31" (mirrors the Google Form's own Sheet timestamp format). */
+function fmtUs(iso: string | null): string {
+  if (!iso) return '';
+  const [d, t] = iso.split('T');
+  const [y, m, day] = d.split('-');
+  return t ? `${m}/${day}/${y} ${t.slice(0, 8)}` : `${m}/${day}/${y}`;
+}
+
+/** A new pending job card was auto-created from a Google Form submission — post it in the same
+ *  layout the "New Work Report" n8n notification uses, so both look the same in Slack. */
+export async function notifyFormIntake(r: RequestDoc, extra: { image_url?: string | null } = {}) {
   if (!slackEnabled()) return;
   const names = await masterNames();
   const property = names.properties.get(r.property_id) ?? '—';
   const category = names.categories.get(r.category_id) ?? '—';
-  const text = `*New pending job card created from Form*\n*Job:* ${r.request_no}\n*Property:* ${property}\n*Category:* ${category}\n*Narration:* ${r.description}`;
-  await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text });
+  const work = WORK_TYPES.find((w) => w.key === r.work_type)?.label ?? r.work_type ?? '';
+  const lines = [
+    '🏢 *New Work Report*',
+    `🏠 *Property:* ${property}`,
+    r.property_no ? `🔢 *Property No:* ${r.property_no}` : null,
+    `🔧 *Work Category:* ${category}`,
+    work ? `🛠️ *Work:* ${work}` : null,
+    `🕐 *Timestamp:* ${fmtUs(r.requested_at)}`,
+    `🗓️ *Work Completion Date:* ${fmtUs(r.target_date)}`,
+    `📝 *Narration:* ${r.description}`,
+    extra.image_url ? `📍 *Image of Location:* ${extra.image_url}` : null,
+    r.requester_email ? `📧 *Email Address:* ${r.requester_email}` : null,
+    r.reason ? `❓ *Reason:* ${r.reason}` : null,
+  ].filter((l): l is string => !!l);
+  await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: lines.join('\n'), unfurl_links: true });
 }
 
 /** Site visit stage just went active — DM the assigned site engineer if we have their Slack ID, once. */

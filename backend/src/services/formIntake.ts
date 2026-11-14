@@ -18,8 +18,9 @@ const LEGEND = [
   'How,Google Form,,,,,Physically & Fill Job Card-2 with all Details,,,,,Full Kitting & Date of Completion & Fill Google Form,,,,,Google form,,,,Whatsapp/Call,,,,Whatsapp/Call/Physically/Mail,,,,Whatsapp/Call/Physically/Mail,,,,Whatsapp/Call/Physically,,,,,,,',
   'When,Anytime,,,,,Next Day 3 PM,,,,,Same day 6 PM,,,,,1,,,,Next  day  by 10:00 AM,,,,Same  day  by 11:00 AM,,,,Same  day  by 12:00 PM,,,,7,,,,,,,',
   ',1st,,,,,2nd,,,,,3rd,,,,,3rd(1),,,,4th,,,,5th,,,,6th,,,,7th,,,,,,,',
-  'Timestamp,Property,Work Category,Work Completion Date,Image of Location,Narration,Planned,Actual,Status,Time Delay,Engg Name,Planned,Actual,Status,Time Delay,Engg Name,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,,Image Link,Remarks (Regarding Job Card),Category By PC Mam',
+  'Timestamp,Property,Work Category,Work Completion Date,Image of Location,Narration,Planned,Actual,Status,Time Delay,Engg Name,Planned,Actual,Status,Time Delay,Engg Name,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,Planned,Actual,Status,Time Delay,,Image Link,Remarks (Regarding Job Card),Category By PC Mam,Property No,Work,Email Address,Reason',
 ];
+const ROW_WIDTH = 44;
 
 function csvField(v: unknown): string {
   const s = String(v == null ? '' : v);
@@ -33,6 +34,10 @@ export interface FormSubmission {
   completion_date?: string;
   image_url?: string;
   narration: string;
+  property_no?: string;
+  work_type?: string;
+  requester_email?: string;
+  reason?: string;
 }
 
 function fmtNow(): string {
@@ -64,7 +69,7 @@ export async function intakeFormSubmission(body: FormSubmission, ip: string) {
   if (!workCategory) throw new HttpError(400, 'Work Category is required');
   if (!narration) throw new HttpError(400, 'Narration is required');
 
-  const fields = new Array(40).fill('');
+  const fields = new Array(ROW_WIDTH).fill('');
   fields[0] = String(body.timestamp ?? '').trim() || fmtNow();
   fields[1] = property;
   fields[2] = workCategory;
@@ -72,6 +77,10 @@ export async function intakeFormSubmission(body: FormSubmission, ip: string) {
   fields[4] = String(body.image_url ?? '').trim();
   fields[5] = narration;
   fields[38] = 'Pending';
+  fields[40] = String(body.property_no ?? '').trim();
+  fields[41] = String(body.work_type ?? '').trim();
+  fields[42] = String(body.requester_email ?? '').trim();
+  fields[43] = String(body.reason ?? '').trim();
 
   const csv = [...LEGEND, fields.map(csvField).join(',')].join('\n') + '\n';
   const file = { buffer: Buffer.from(csv, 'utf8'), originalname: 'form-submission.csv', size: Buffer.byteLength(csv) };
@@ -84,6 +93,6 @@ export async function intakeFormSubmission(body: FormSubmission, ip: string) {
   }
   const result = await commitImport(uploaded.upload_id, reqBody, SYSTEM_USER);
   const created = await col.requests().findOne({ import_batch_id: result.batch_id });
-  if (created) await notifyFormIntake(created).catch((e) => console.error('Form-intake Slack notify failed:', e));
+  if (created) await notifyFormIntake(created, { image_url: fields[4] }).catch((e) => console.error('Form-intake Slack notify failed:', e));
   return result;
 }
