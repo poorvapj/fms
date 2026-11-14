@@ -35,8 +35,9 @@ app.use('/api', (req, res, next) => {
 });
 // Slack signs the raw body itself and has no session cookie, so it's handled before JSON parsing / CSRF / auth.
 app.use('/api/slack', slackRoutes);
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: false, limit: '2mb' }));
+// 10mb: the form-intake route receives a base64-encoded photo (Apps Script fetches it from Drive itself).
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 app.use(cookieParser());
 
 // CSRF defence for cookie auth: state-changing API calls must be same-origin JSON/multipart with a custom header.

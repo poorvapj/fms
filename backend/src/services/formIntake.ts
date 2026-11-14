@@ -33,6 +33,8 @@ export interface FormSubmission {
   work_category: string;
   completion_date?: string;
   image_url?: string;
+  /** Base64-encoded photo bytes — the Apps Script trigger fetches these itself via DriveApp (no public sharing needed). */
+  image_base64?: string;
   narration: string;
   property_no?: string;
   work_type?: string;
@@ -93,6 +95,8 @@ export async function intakeFormSubmission(body: FormSubmission, ip: string) {
   }
   const result = await commitImport(uploaded.upload_id, reqBody, SYSTEM_USER);
   const created = await col.requests().findOne({ import_batch_id: result.batch_id });
-  if (created) await notifyFormIntake(created, { image_url: fields[4] }).catch((e) => console.error('Form-intake Slack notify failed:', e));
+  if (created) {
+    await notifyFormIntake(created, { image_url: fields[4], image_base64: body.image_base64 }).catch((e) => console.error('Form-intake Slack notify failed:', e));
+  }
   return result;
 }

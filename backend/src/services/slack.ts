@@ -40,9 +40,31 @@ function fmtUs(iso: string | null): string {
   return t ? `${m}/${day}/${y} ${t.slice(0, 8)}` : `${m}/${day}/${y}`;
 }
 
+/** Posts an already-downloaded image (bytes from the Apps Script trigger, base64-encoded) into Slack as an actual photo. */
+async function uploadImageBytesToSlack(base64: string, channel: string, title: string): Promise<boolean> {
+  const bytes = Buffer.from(base64, 'base64');
+  if (!bytes.length) return false;
+  const filename = `${title}.jpg`;
+
+  const urlForm = new URLSearchParams({ filename, length: String(bytes.length) });
+  const urlRes = await (await fetch(`${SLACK_API}/files.getUploadURLExternal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${config.slackBotToken}` },
+    body: urlForm,
+  })).json();
+  if (!urlRes.ok) { console.error('Slack files.getUploadURLExternal failed:', urlRes.error); return false; }
+  const uploadRes = await fetch(urlRes.upload_url, { method: 'POST', body: bytes });
+  if (!uploadRes.ok) return false;
+  const complete = await slackApi('files.completeUploadExternal', {
+    files: [{ id: urlRes.file_id, title }], channel_id: channel,
+  });
+  if (!complete.ok) console.error('Slack files.completeUploadExternal response:', JSON.stringify(complete));
+  return !!complete.ok;
+}
+
 /** A new pending job card was auto-created from a Google Form submission — post it in the same
  *  layout the "New Work Report" n8n notification uses, so both look the same in Slack. */
-export async function notifyFormIntake(r: RequestDoc, extra: { image_url?: string | null } = {}) {
+export async function notifyFormIntake(r: RequestDoc, extra: { image_url?: string | null; image_base64?: string | null; channel?: string } = {}) {
   if (!slackEnabled()) return;
   const names = await masterNames();
   const property = names.properties.get(r.property_id) ?? '—';
@@ -61,7 +83,9 @@ export async function notifyFormIntake(r: RequestDoc, extra: { image_url?: strin
     r.requester_email ? `📧 *Email Address:* ${r.requester_email}` : null,
     r.reason ? `❓ *Reason:* ${r.reason}` : null,
   ].filter((l): l is string => !!l);
-  await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: lines.join('\n'), unfurl_links: true });
+  const channel = extra.channel ?? FORM_INTAKE_CHANNEL;
+  await slackApi('chat.postMessage', { channel, text: lines.join('\n'), unfurl_links: true });
+  if (extra.image_base64) await uploadImageBytesToSlack(extra.image_base64, channel, r.request_no);
 }
 
 /** Site visit stage just went active — DM the assigned site engineer if we have their Slack ID, once. */
