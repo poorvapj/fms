@@ -17,6 +17,7 @@ import { createSlaRule, deleteSlaRule, listSlaRules } from '../services/slaRules
 import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../services/publicService.ts';
 import { intakeFormSubmission } from '../services/formIntake.ts';
 import { legacyAllSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
+import { renderLegacyPdf } from '../services/pdfExport.ts';
 import { buildFilter, createRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
@@ -107,6 +108,19 @@ api.get('/requests/export.csv', async (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="job-cards.csv"');
   res.send(toCsv(section.columns, section.rows));
+});
+api.get('/requests/export.pdf', async (req, res) => {
+  const { filter } = buildFilter(req.query, req.user!);
+  const [rows, names] = await Promise.all([
+    col.requests().find(filter, { projection: REPORT_PROJECTION }).sort({ requested_at: 1 }).toArray(),
+    masterNames(),
+  ]);
+  const section = await legacyAllSection(rows, names);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="job-cards.pdf"');
+  const doc = renderLegacyPdf(section.columns, section.rows, section.title);
+  doc.pipe(res);
+  doc.end();
 });
 api.post('/requests', requirePermission('request.create'), evidenceUpload.array('images', 10), async (req, res) => {
   res.status(201).json(await createRequest(req.body ?? {}, req.user!, files(req)));

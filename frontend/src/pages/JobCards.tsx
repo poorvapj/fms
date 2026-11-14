@@ -61,7 +61,9 @@ export function JobCards() {
   const query = { ...v, ...Object.fromEntries(Object.entries(view.filter).filter(([k]) => !v[k as keyof typeof v])), view: undefined };
   const { data, error, loading, reload } = useLoad(() => api.get<Paged<RequestRow>>('/requests', { ...query, page_size: 10 }), [f.key]);
   const { data: kpiData } = useLoad(() => api.get<{ kpi: Record<string, number> }>('/dashboard', query), [f.key]);
-  const exportUrl = `${API_BASE}/requests/export.csv${qs({ ...query, page: undefined, sort: undefined, dir: undefined })}`;
+  const exportQs = qs({ ...query, page: undefined, sort: undefined, dir: undefined });
+  const exportUrl = `${API_BASE}/requests/export.csv${exportQs}`;
+  const exportPdfUrl = `${API_BASE}/requests/export.pdf${exportQs}`;
   const showNew = params.get('new') === '1';
   const closeNew = () => { const n = new URLSearchParams(params); n.delete('new'); setParams(n, { replace: true }); };
 
@@ -82,6 +84,7 @@ export function JobCards() {
         sub="Every job, from raised to closed."
         actions={<>
           <a className="btn" href={exportUrl}><Icon name="download" size={14} />CSV</a>
+          <a className="btn" href={exportPdfUrl}><Icon name="download" size={14} />PDF</a>
           {can('request.create') && <button className="btn primary" onClick={() => setParams({ ...Object.fromEntries(params), new: '1' })}><Icon name="plus" size={14} />New Job Card</button>}
         </>}
       />
