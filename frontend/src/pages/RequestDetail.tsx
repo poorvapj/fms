@@ -341,10 +341,10 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
             <textarea className="input" style={{ minHeight: 60 }} placeholder="Notes for this stage (visible in the timeline)…" value={comments} onChange={(e) => setComments(e.target.value)} />
           </Field>
         </div>
-        {needsEvidence && (
-          <div className="alert warn">
-            <Icon name="alert" />This stage needs evidence before it can be marked done.
-            <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+        {(needsEvidence || needsClosure) && (
+          <div className={needsEvidence ? 'alert warn' : 'card-body'} style={needsEvidence ? undefined : { padding: 0 }}>
+            {needsEvidence && <><Icon name="alert" />This stage needs evidence before it can be marked done.</>}
+            <div className="stack" style={{ marginTop: needsEvidence ? 8 : 0, gap: 8 }}>
               <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
               {busy === 'evidence' && <div className="muted small">Uploading…</div>}
               <div className="row">
