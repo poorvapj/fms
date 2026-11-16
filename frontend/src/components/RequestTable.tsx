@@ -17,13 +17,14 @@ function Th({ label, k, sort, onSort }: { label: string; k?: string; sort?: Sort
 
 /**
  * Colour a row by what its remark says — mirrors the colour-coding used on the legacy FMS sheet
- * (green = done, red = not possible / rejected, orange = on hold / awaiting a decision).
+ * (red = not possible / rejected, orange = on hold / awaiting a decision). Green is reserved for
+ * rows that are actually closed (by status, in rowTone) — a remark merely mentioning "done" doesn't
+ * mean the row itself is closed, so it must never turn a still-open row green.
  */
 function remarkTone(remark: string | null): { bg: string; text: string } | null {
   if (!remark) return null;
   const t = remark.toLowerCase();
   if (/not possible|not feasible|wrong complaint|rejected/.test(t)) return { bg: '#fca5a1', text: '#7a1712' };
-  if (/\bdone\b|resolved|work done|completed|fixed/.test(t)) return { bg: '#86efac', text: '#0b4a24' };
   if (/hold|will decide|pending|requirement|dalegi|raised|driver pending/.test(t)) return { bg: '#fdba74', text: '#7a3b06' };
   return null;
 }
