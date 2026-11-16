@@ -143,14 +143,22 @@ function rowTone(r: RequestRow): { bg: string; text: string } | null {
   return remarkTone(r.pc_remark);
 }
 
+/** The legacy sheet's own reference number, when the imported remark text literally carries one —
+ *  e.g. "Pending (FMS ref 2166)". import_row_no is just this row's position in whatever file it was
+ *  imported from (often a fresh one-row/few-row batch), so it is NOT a real reference number. */
+function fmsRef(remark: string | null): string | null {
+  return /\(FMS ref (\d+)\)/.exec(remark ?? '')?.[1] ?? null;
+}
+
 /** Closed rows show the remark left at closing time; open rows keep the legacy FMS remark. Closing replaces
- *  the remark with our own closure_note, which drops the original FMS sheet row number — re-append it so a
- *  closed card can still be traced back to the old sheet. */
+ *  the remark with our own closure_note, which drops the original FMS sheet reference — re-append it (if the
+ *  sheet remark actually had one) so a closed card can still be traced back to the old sheet. */
 function displayRemark(r: RequestRow): string | null {
   if (r.status !== 'closed') return r.pc_remark;
   const base = r.closure_note || r.pc_remark;
-  if (!r.import_row_no || base?.includes(`FMS ref ${r.import_row_no}`)) return base;
-  return base ? `${base} (FMS ref ${r.import_row_no})` : `(FMS ref ${r.import_row_no})`;
+  const ref = fmsRef(r.pc_remark);
+  if (!ref || base?.includes(`FMS ref ${ref}`)) return base;
+  return base ? `${base} (FMS ref ${ref})` : `(FMS ref ${ref})`;
 }
 
 /** Job card list: Job Card · Project · Narration · Category · Priority · Status · Next Action · Due */

@@ -207,10 +207,12 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
   return list.map((r, i) => {
     const imgs = imagesByRequest.get(r._id) ?? [];
     let remark = stage(r, 'closed')?.comments || r.closure_note || r.hold_reason || r.pc_remark || null;
-    // Closing replaces the legacy FMS remark with our own closure note, which drops the original sheet row
-    // number — re-append it (mirrors RequestTable.tsx's displayRemark) so a closed card stays traceable.
-    if (r.status === 'closed' && r.import_row_no && !remark?.includes(`FMS ref ${r.import_row_no}`)) {
-      remark = remark ? `${remark} (FMS ref ${r.import_row_no})` : `(FMS ref ${r.import_row_no})`;
+    // Closing replaces the legacy FMS remark with our own closure note. If the original sheet remark carried
+    // a real reference number (e.g. "Pending (FMS ref 2166)" — not import_row_no, which is just this row's
+    // position in whatever file it was imported from), re-append it so a closed card stays traceable.
+    const ref = /\(FMS ref (\d+)\)/.exec(r.pc_remark ?? '')?.[1];
+    if (r.status === 'closed' && ref && !remark?.includes(`FMS ref ${ref}`)) {
+      remark = remark ? `${remark} (FMS ref ${ref})` : `(FMS ref ${ref})`;
     }
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
