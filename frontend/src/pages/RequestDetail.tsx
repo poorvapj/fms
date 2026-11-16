@@ -13,22 +13,46 @@ import type { Attachment, RequestDetail as Detail, Stage } from '../lib/types';
 
 const fileUrl = (a: Attachment) => (a.kind === 'file' ? `${API_BASE}/attachments/${a.id}/file` : a.url ?? '#');
 
+/** Google Drive share links don't serve the image directly — pull the file id out so we can use Drive's thumbnail endpoint. */
+function driveThumb(url: string): string | null {
+  const m = /\/file\/d\/([\w-]+)/.exec(url) ?? /[?&]id=([\w-]+)/.exec(url);
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w500` : null;
+}
+
 function Evidence({ items }: { items: Attachment[] }) {
   if (!items.length) return null;
   return (
     <div className="evidence">
-      {items.map((a) =>
-        a.kind === 'file' && a.mime?.startsWith('image/') ? (
-          <a key={a.id} href={fileUrl(a)} target="_blank" rel="noreferrer" title={a.caption ?? a.file_name ?? ''} style={{ padding: 0, border: 0 }}>
-            <img className="thumb" src={fileUrl(a)} alt={a.caption ?? a.file_name ?? 'image'} loading="lazy" />
-          </a>
-        ) : (
+      {items.map((a) => {
+        if (a.kind === 'file' && a.mime?.startsWith('image/')) {
+          return (
+            <a key={a.id} href={fileUrl(a)} target="_blank" rel="noreferrer" title={a.caption ?? a.file_name ?? ''} style={{ padding: 0, border: 0 }}>
+              <img className="thumb" src={fileUrl(a)} alt={a.caption ?? a.file_name ?? 'image'} loading="lazy" />
+            </a>
+          );
+        }
+        const thumb = a.kind === 'url' && a.url ? driveThumb(a.url) : null;
+        if (thumb) {
+          return (
+            <a key={a.id} href={a.url!} target="_blank" rel="noreferrer noopener" title={a.caption ?? 'image'} style={{ padding: 0, border: 0 }}>
+              <img
+                className="thumb" src={thumb} alt={a.caption ?? 'image'} loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  (e.currentTarget.nextElementSibling as HTMLElement | null)?.style.removeProperty('display');
+                }}
+              />
+              <span style={{ display: 'none' }}><Icon name="link" size={13} />{a.caption ?? 'Link'}</span>
+            </a>
+          );
+        }
+        return (
           <a key={a.id} href={fileUrl(a)} target="_blank" rel="noreferrer noopener">
             <Icon name={a.kind === 'url' ? 'link' : 'file'} size={13} />
             {a.caption ?? a.file_name ?? 'Link'}{a.size ? ` · ${fmtBytes(a.size)}` : ''}
           </a>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -490,7 +514,7 @@ function StageStrip({ d }: { d: Detail }) {
 
 // ---------------------------------------------------------------------------------------------------- page
 
-type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'communication' | 'history';
+type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'history';
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -506,7 +530,6 @@ export function RequestDetail() {
   const r = data.request;
   const fact = (k: string, v: ReactNode) => <div className="fact"><div className="k">{k}</div><div className="v">{v ?? '—'}</div></div>;
   const locationImages = data.attachments.filter((a) => a.stage_key === 'created');
-  const otherFiles = data.attachments.filter((a) => a.stage_key !== 'created');
   const activeStage = data.stages.find((s) => s.status === 'active');
   const currentOwner = activeStage ? (activeStage.engineer_name ?? activeStage.responsible_name ?? activeStage.responsible_role) : null;
   const reopenCount = data.events.filter((e) => e.type === 'reopen').length;
@@ -517,7 +540,7 @@ export function RequestDetail() {
 
   const tabDefs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
-    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Communication' }, { key: 'history', label: 'History' },
+    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence & Comments' }, { key: 'history', label: 'History' },
   ];
 
   return (
@@ -623,14 +646,11 @@ export function RequestDetail() {
       )}
 
       {tab === 'evidence' && (
-        <div className="card">
-          <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{data.attachments.length}</span></div>
-          <div className="card-body"><Evidence items={data.attachments} /></div>
-        </div>
-      )}
-
-      {tab === 'communication' && (
         <div className="stack">
+          <div className="card">
+            <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{data.attachments.length}</span></div>
+            <div className="card-body"><Evidence items={data.attachments} /></div>
+          </div>
           {can('request.comment') && <CommentBox d={data} onDone={setData} />}
           <div className="card">
             <div className="card-head"><h3>Comments</h3></div>
@@ -640,12 +660,6 @@ export function RequestDetail() {
               </ul>
             )}
           </div>
-          {otherFiles.length > 0 && (
-            <div className="card">
-              <div className="card-head"><h3>Shared files & links</h3></div>
-              <div className="card-body"><Evidence items={otherFiles} /></div>
-            </div>
-          )}
         </div>
       )}
 
