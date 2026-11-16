@@ -253,7 +253,7 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const hasEvidence = d.attachments.some((a) => a.stage_key === stage.stage_key);
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
-  const needsEvidence = (def.requires_evidence || needsClosure) && !hasEvidence && !evidenceFiles.length;
+  const needsEvidence = !hasEvidence && !evidenceFiles.length;
 
   const addEvidenceLink = async () => {
     setBusy('evidence');
