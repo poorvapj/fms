@@ -74,7 +74,7 @@ function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
           <input type="file" accept="image/*" multiple hidden onChange={(e) => setPhotos(Array.from(e.target.files ?? []))} disabled={busy} />
         </label>
       )}
-      <button className="btn sm" disabled={busy || !kind || !remarks.trim()} onClick={apply} title={error ?? 'Apply'}>{busy ? '…' : 'Go'}</button>
+      <button className="btn sm" disabled={busy || !kind || !remarks.trim() || (kind === 'resolved' && !photos.length)} onClick={apply} title={error ?? (kind === 'resolved' && !photos.length ? 'Photo required to resolve' : 'Apply')}>{busy ? '…' : 'Go'}</button>
     </div>
   );
 }

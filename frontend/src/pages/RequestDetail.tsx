@@ -251,9 +251,9 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
 
   if (!stage || !def || stage.stage_key === 'created') return null;
   const hasEvidence = d.attachments.some((a) => a.stage_key === stage.stage_key);
-  const needsEvidence = def.requires_evidence && !hasEvidence && !evidenceFiles.length;
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
+  const needsEvidence = (def.requires_evidence || needsClosure) && !hasEvidence && !evidenceFiles.length;
 
   const addEvidenceLink = async () => {
     setBusy('evidence');
