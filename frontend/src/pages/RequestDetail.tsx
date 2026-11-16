@@ -522,7 +522,7 @@ function StageStrip({ d }: { d: Detail }) {
 
 // ---------------------------------------------------------------------------------------------------- page
 
-type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'communication' | 'history';
+type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'communication' | 'closed' | 'history';
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -546,9 +546,12 @@ export function RequestDetail() {
   const approvalStages = data.stages.filter((s) => s.decision_stage);
   const commentEvents = data.events.filter((e) => e.type === 'comment');
 
+  const closurePhotos = data.attachments.filter((a) => a.stage_key === 'closed' && a.source !== 'comment');
   const tabDefs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
-    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' }, { key: 'history', label: 'History' },
+    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' },
+    ...(r.status === 'closed' ? [{ key: 'closed' as const, label: 'Closed' }] : []),
+    { key: 'history', label: 'History' },
   ];
   const commentPhotos = data.attachments.filter((a) => a.source === 'comment' || a.stage_key === 'closed');
   const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment');
@@ -678,6 +681,17 @@ export function RequestDetail() {
                 {commentEvents.map((e) => <li key={e.id}>{e.message}<div className="meta">{e.user_name} · {fmtDateTime(e.created_at)}</div></li>)}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'closed' && (
+        <div className="card">
+          <div className="card-head"><h3>Closing remarks & photos</h3></div>
+          <div className="card-body stack">
+            {r.closure_category && fact('Closure category', r.closure_category)}
+            {r.closure_note ? <div className="small"><span className="muted">Remarks:</span> {r.closure_note}</div> : <Empty title="No closing remarks" />}
+            <Evidence items={closurePhotos} />
           </div>
         </div>
       )}
