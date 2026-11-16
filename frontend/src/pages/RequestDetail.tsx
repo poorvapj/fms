@@ -513,7 +513,7 @@ function StageStrip({ d }: { d: Detail }) {
 
 // ---------------------------------------------------------------------------------------------------- page
 
-type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'history';
+type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'communication' | 'history';
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -539,7 +539,7 @@ export function RequestDetail() {
 
   const tabDefs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
-    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence & Comments' }, { key: 'history', label: 'History' },
+    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Communication' }, { key: 'history', label: 'History' },
   ];
 
   return (
@@ -645,11 +645,14 @@ export function RequestDetail() {
       )}
 
       {tab === 'evidence' && (
+        <div className="card">
+          <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{data.attachments.length}</span></div>
+          <div className="card-body"><Evidence items={data.attachments} /></div>
+        </div>
+      )}
+
+      {tab === 'communication' && (
         <div className="stack">
-          <div className="card">
-            <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{data.attachments.length}</span></div>
-            <div className="card-body"><Evidence items={data.attachments} /></div>
-          </div>
           {can('request.comment') && <CommentBox d={data} onDone={setData} />}
           <div className="card">
             <div className="card-head"><h3>Comments</h3></div>
