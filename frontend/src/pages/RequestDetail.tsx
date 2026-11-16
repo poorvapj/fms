@@ -251,7 +251,7 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
 
   if (!stage || !def || stage.stage_key === 'created') return null;
   const hasEvidence = d.attachments.some((a) => a.stage_key === stage.stage_key);
-  const needsEvidence = def.requires_evidence && !hasEvidence;
+  const needsEvidence = def.requires_evidence && !hasEvidence && !evidenceFiles.length;
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
 
@@ -262,33 +262,19 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
     catch (e) { setError(errorText(e)); } finally { setBusy(null); }
   };
 
-  const pickEvidencePhotos = async (files: File[]) => {
-    const newFiles = files.filter((f) => !evidenceFiles.includes(f));
-    setEvidenceFiles(files);
-    if (!newFiles.length) return;
-    setBusy('evidence');
-    setError(null);
-    try {
-      let result: Detail | null = null;
-      for (const file of newFiles) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('stage_key', stage.stage_key);
-        result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
-      }
-      if (result) onDone(result);
-      setEvidenceFiles([]);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(null);
-    }
-  };
+  const pickEvidencePhotos = (files: File[]) => setEvidenceFiles(files);
 
   const act = async (kind: 'complete' | 'approve' | 'reject' | 'skip') => {
     setBusy(kind);
     setError(null);
     try {
+      for (const file of evidenceFiles) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('stage_key', stage.stage_key);
+        await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+      }
+      setEvidenceFiles([]);
       let result: Detail;
       if (kind === 'skip') {
         result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/skip`, { reason: comments });
@@ -341,19 +327,17 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
             <textarea className="input" style={{ minHeight: 60 }} placeholder="Notes for this stage (visible in the timeline)…" value={comments} onChange={(e) => setComments(e.target.value)} />
           </Field>
         </div>
-        {(needsEvidence || needsClosure) && (
-          <div className={needsEvidence ? 'alert warn' : 'card-body'} style={needsEvidence ? undefined : { padding: 0 }}>
-            {needsEvidence && <><Icon name="alert" />This stage needs evidence before it can be marked done.</>}
-            <div className="stack" style={{ marginTop: needsEvidence ? 8 : 0, gap: 8 }}>
-              <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
-              {busy === 'evidence' && <div className="muted small">Uploading…</div>}
-              <div className="row">
-                <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
-                <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidenceLink}>Add link</button>
-              </div>
+        <div className={needsEvidence ? 'alert warn' : undefined}>
+          {needsEvidence && <><Icon name="alert" />This stage needs evidence before it can be marked done.</>}
+          <div className="stack" style={{ marginTop: needsEvidence ? 8 : 0, gap: 8 }}>
+            <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
+            {busy === 'evidence' && <div className="muted small">Uploading…</div>}
+            <div className="row">
+              <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
+              <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidenceLink}>Add link</button>
             </div>
           </div>
-        )}
+        </div>
         <div className="row wrap">
           {def.decision ? (
             <>
