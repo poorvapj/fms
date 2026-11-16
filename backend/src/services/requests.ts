@@ -76,7 +76,7 @@ export function buildFilter(f: Record<string, any>, user: AuthUser): { filter: F
 export const LIST_PROJECTION = {
   request_no: 1, source: 1, title: 1, priority: 1, status: 1, requested_at: 1, target_date: 1, location_detail: 1, property_no: 1,
   work_type: 1, current_stage_key: 1, current_stage_planned_at: 1, completed_at: 1, closed_at: 1, hold_reason: 1, property_id: 1,
-  category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1, held_at: 1, pc_remark: 1, closure_note: 1, closure_category: 1,
+  category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1, held_at: 1, pc_remark: 1, closure_note: 1, closure_category: 1, import_row_no: 1,
 };
 
 type Names = Awaited<ReturnType<typeof masterNames>>;
@@ -95,6 +95,7 @@ export function listRow(r: Doc, names: Names, now: string) {
     site_engineer_id: r.site_engineer_id ?? null, site_engineer_name: names.engineers.get(r.site_engineer_id) ?? null,
     is_overdue: overdue, overdue_minutes: overdue ? diffMinutes(now, r.current_stage_planned_at) : null,
     pc_remark: r.pc_remark ?? null, closure_note: r.closure_note ?? null, closure_category: r.closure_category ?? null,
+    import_row_no: r.import_row_no ?? null,
   };
 }
 

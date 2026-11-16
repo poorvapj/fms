@@ -73,6 +73,7 @@ export interface RequestRow {
   pc_remark: string | null;
   closure_note: string | null;
   closure_category: string | null;
+  import_row_no: number | null;
 }
 
 export interface Stage {

@@ -143,9 +143,14 @@ function rowTone(r: RequestRow): { bg: string; text: string } | null {
   return remarkTone(r.pc_remark);
 }
 
-/** Closed rows show the remark left at closing time; open rows keep the legacy FMS remark. */
+/** Closed rows show the remark left at closing time; open rows keep the legacy FMS remark. Closing replaces
+ *  the remark with our own closure_note, which drops the original FMS sheet row number — re-append it so a
+ *  closed card can still be traced back to the old sheet. */
 function displayRemark(r: RequestRow): string | null {
-  return r.status === 'closed' ? (r.closure_note || r.pc_remark) : r.pc_remark;
+  if (r.status !== 'closed') return r.pc_remark;
+  const base = r.closure_note || r.pc_remark;
+  if (!r.import_row_no || base?.includes(`FMS ref ${r.import_row_no}`)) return base;
+  return base ? `${base} (FMS ref ${r.import_row_no})` : `(FMS ref ${r.import_row_no})`;
 }
 
 /** Job card list: Job Card · Project · Narration · Category · Priority · Status · Next Action · Due */
