@@ -37,7 +37,7 @@ function rowTone(r: RequestRow): { bg: string; text: string } | null {
   if (r.status === 'closed') return BAD_CLOSURE.test(r.closure_category ?? '') ? { bg: '#fca5a1', text: '#7a1712' } : { bg: '#86efac', text: '#0b4a24' };
   if (r.status === 'cancelled') return { bg: '#fca5a1', text: '#7a1712' };
   if (r.status === 'on_hold') return { bg: '#fdba74', text: '#7a3b06' };
-  return remarkTone(r.pc_remark);
+  return remarkTone(r.pc_remark) ?? (r.is_overdue ? { bg: '#fdba74', text: '#7a3b06' } : null);
 }
 
 /** The legacy sheet's own reference number, when the imported remark text literally carries one —

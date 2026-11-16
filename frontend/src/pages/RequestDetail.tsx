@@ -202,7 +202,6 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
         {live && r.status !== 'on_hold' && <button className="btn sm" onClick={() => setDialog('hold')}><Icon name="pause" size={13} />Hold</button>}
         {r.status === 'on_hold' && <button className="btn sm primary" onClick={() => setDialog('resume')}><Icon name="play" size={13} />Resume</button>}
         {canFastClose && <button className="btn sm primary" onClick={() => setDialog('resolve-close')} title="Skip every remaining stage and close the job card as resolved"><Icon name="check" size={13} />Resolved — Close</button>}
-        {live && <button className="btn sm danger" onClick={() => setDialog('cancel')}><Icon name="x" size={13} />Cancel</button>}
         {canFastClose && <button className="btn sm ghost" onClick={() => setDialog('fast-close')} title="Skip every remaining stage and close the job card right now"><Icon name="skip" size={13} />Not Needed — Close</button>}
         {['closed', 'completed', 'cancelled'].includes(r.status) && <button className="btn sm" onClick={() => setDialog('reopen')}><Icon name="rotate" size={13} />{titles.reopen}</button>}
       </div>
