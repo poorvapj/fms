@@ -40,9 +40,8 @@ function fmtUs(iso: string | null): string {
   return t ? `${m}/${day}/${y} ${t.slice(0, 8)}` : `${m}/${day}/${y}`;
 }
 
-/** Posts an already-downloaded image (bytes from the Apps Script trigger, base64-encoded) into Slack as an actual photo. */
-async function uploadImageBytesToSlack(base64: string, channel: string, title: string): Promise<boolean> {
-  const bytes = Buffer.from(base64, 'base64');
+/** Posts an already-downloaded image (bytes) into Slack as an actual photo. */
+async function uploadImageBytesToSlack(bytes: Buffer, channel: string, title: string): Promise<boolean> {
   if (!bytes.length) return false;
   const filename = `${title}.jpg`;
 
@@ -53,7 +52,7 @@ async function uploadImageBytesToSlack(base64: string, channel: string, title: s
     body: urlForm,
   })).json();
   if (!urlRes.ok) { console.error('Slack files.getUploadURLExternal failed:', urlRes.error); return false; }
-  const uploadRes = await fetch(urlRes.upload_url, { method: 'POST', body: bytes });
+  const uploadRes = await fetch(urlRes.upload_url, { method: 'POST', body: new Uint8Array(bytes) });
   if (!uploadRes.ok) return false;
   const complete = await slackApi('files.completeUploadExternal', {
     files: [{ id: urlRes.file_id, title }], channel_id: channel,
@@ -85,7 +84,33 @@ export async function notifyFormIntake(r: RequestDoc, extra: { image_url?: strin
   ].filter((l): l is string => !!l);
   const channel = extra.channel ?? FORM_INTAKE_CHANNEL;
   await slackApi('chat.postMessage', { channel, text: lines.join('\n'), unfurl_links: true });
-  if (extra.image_base64) await uploadImageBytesToSlack(extra.image_base64, channel, r.request_no);
+  if (extra.image_base64) await uploadImageBytesToSlack(Buffer.from(extra.image_base64, 'base64'), channel, r.request_no);
+}
+
+/** A new pending job card was just raised through the public complaint form (fms-iota-ten.vercel.app/submit). */
+export async function notifyPublicSubmission(r: RequestDoc, images: { buffer: Buffer }[] = []) {
+  if (!slackEnabled()) return;
+  const names = await masterNames();
+  const property = names.properties.get(r.property_id) ?? '—';
+  const category = names.categories.get(r.category_id) ?? '—';
+  const work = WORK_TYPES.find((w) => w.key === r.work_type)?.label ?? r.work_type ?? '';
+  const lines = [
+    '🏢 *New Work Report (Public Form)*',
+    `🏠 *Property:* ${property}`,
+    r.property_no ? `🔢 *Property No:* ${r.property_no}` : null,
+    `🔧 *Work Category:* ${category}`,
+    work ? `🛠️ *Work:* ${work}` : null,
+    `🕐 *Timestamp:* ${fmtUs(r.requested_at)}`,
+    `🗓️ *Work Completion Date:* ${fmtUs(r.target_date)}`,
+    `📝 *Narration:* ${r.description}`,
+    r.requester_name ? `👤 *Requester:* ${r.requester_name}` : null,
+    r.requester_contact ? `📞 *Contact:* ${r.requester_contact}` : null,
+    r.requester_email ? `📧 *Email Address:* ${r.requester_email}` : null,
+    r.reason ? `❓ *Reason:* ${r.reason}` : null,
+  ].filter((l): l is string => !!l);
+  const channel = FORM_INTAKE_CHANNEL;
+  await slackApi('chat.postMessage', { channel, text: lines.join('\n'), unfurl_links: true });
+  for (const img of images) await uploadImageBytesToSlack(img.buffer, channel, r.request_no);
 }
 
 /** Site visit stage just went active — DM the assigned site engineer if we have their Slack ID, once. */

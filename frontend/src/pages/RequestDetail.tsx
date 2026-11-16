@@ -144,11 +144,12 @@ function StageDetail({ d, stageKey, onEdit, canEdit }: { d: Detail; stageKey: st
 function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
   const meta = useMeta();
   const { can } = useAuth();
-  const [dialog, setDialog] = useState<null | 'hold' | 'resume' | 'cancel' | 'reopen' | 'assign' | 'fast-close'>(null);
+  const [dialog, setDialog] = useState<null | 'hold' | 'resume' | 'cancel' | 'reopen' | 'assign' | 'fast-close' | 'resolve-close'>(null);
   const [text, setText] = useState('');
   const [site, setSite] = useState(String(d.request.site_engineer_id ?? ''));
   const [eng, setEng] = useState(String(d.request.assigned_engineer_id ?? ''));
   const [closureCategory, setClosureCategory] = useState('');
+  const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const r = d.request;
@@ -162,11 +163,21 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
       const body = dialog === 'assign' ? { site_engineer_id: site || null, assigned_engineer_id: eng || null }
         : dialog === 'resume' ? { comments: text }
         : dialog === 'fast-close' ? { reason: text, closure_category: closureCategory }
+        : dialog === 'resolve-close' ? { reason: text, closure_category: 'Work Done' }
         : { reason: text };
-      onDone(await api.post<Detail>(`/requests/${r.id}/${dialog}`, body));
+      const endpoint = dialog === 'resolve-close' ? 'fast-close' : dialog;
+      let result = await api.post<Detail>(`/requests/${r.id}/${endpoint}`, body);
+      for (const photo of photos) {
+        const fd = new FormData();
+        fd.append('file', photo);
+        fd.append('stage_key', 'closed');
+        result = await api.post<Detail>(`/requests/${r.id}/attachments`, fd);
+      }
+      onDone(result);
       setDialog(null);
       setText('');
       setClosureCategory('');
+      setPhotos([]);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -176,10 +187,11 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
   const titles = {
     hold: 'Put on hold', resume: 'Resume job card', cancel: 'Cancel job card',
     reopen: r.status === 'cancelled' ? 'Reinstate job card' : 'Reopen for rework', assign: 'Reassign engineers',
-    'fast-close': 'Not needed — close job now',
+    'fast-close': 'Not needed — close job now', 'resolve-close': 'Resolved — close job now',
   };
   const confirmDisabled = busy
     || (dialog === 'fast-close' ? !text.trim() || !closureCategory
+      : dialog === 'resolve-close' ? !text.trim() || !photos.length
       : dialog !== 'assign' && dialog !== 'resume' && !text.trim());
 
   return (
@@ -189,6 +201,7 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
         {live && r.status !== 'on_hold' && <button className="btn sm" onClick={() => setDialog('assign')}><Icon name="users" size={13} />Reassign</button>}
         {live && r.status !== 'on_hold' && <button className="btn sm" onClick={() => setDialog('hold')}><Icon name="pause" size={13} />Hold</button>}
         {r.status === 'on_hold' && <button className="btn sm primary" onClick={() => setDialog('resume')}><Icon name="play" size={13} />Resume</button>}
+        {canFastClose && <button className="btn sm primary" onClick={() => setDialog('resolve-close')} title="Skip every remaining stage and close the job card as resolved"><Icon name="check" size={13} />Resolved — Close</button>}
         {live && <button className="btn sm danger" onClick={() => setDialog('cancel')}><Icon name="x" size={13} />Cancel</button>}
         {canFastClose && <button className="btn sm ghost" onClick={() => setDialog('fast-close')} title="Skip every remaining stage and close the job card right now"><Icon name="skip" size={13} />Not Needed — Close</button>}
         {['closed', 'completed', 'cancelled'].includes(r.status) && <button className="btn sm" onClick={() => setDialog('reopen')}><Icon name="rotate" size={13} />{titles.reopen}</button>}
@@ -218,6 +231,14 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
             </Field>
             <Field label="Reason" required>
               <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+            </Field>
+          </> : dialog === 'resolve-close' ? <>
+            <div className="alert warn"><Icon name="alert" />This skips every remaining stage and closes the job card as resolved (Work Done).</div>
+            <Field label="Remarks" required>
+              <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+            </Field>
+            <Field label="Photo" required>
+              <ImagePicker files={photos} onChange={setPhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
             </Field>
           </> : (
             <Field label={dialog === 'resume' ? 'Comment (optional)' : 'Reason'} required={dialog !== 'resume'}>

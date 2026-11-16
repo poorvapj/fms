@@ -1,7 +1,4 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, errorText } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import { cap, fmtDateTime } from '../lib/format';
 import type { RequestRow } from '../lib/types';
 import { Empty, OverdueBadge, StatusBadge } from './ui';
@@ -15,110 +12,6 @@ function Th({ label, k, sort, onSort }: { label: string; k?: string; sort?: Sort
     <th className="sortable" onClick={() => onSort({ sort: k, dir: on && sort.dir === 'desc' ? 'asc' : 'desc' })} aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       {label}{on ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
     </th>
-  );
-}
-
-/** Inline "resolve / hold" shortcut for a row, so the coordinator doesn't have to open the job card. */
-function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
-  const [kind, setKind] = useState<'' | 'resolved' | 'not_needed' | 'hold'>('');
-  const [remarks, setRemarks] = useState('');
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const live = !['closed', 'cancelled'].includes(row.status);
-  if (!live) return <ClosedRemarkEdit row={row} onDone={onDone} />;
-
-  const apply = async () => {
-    if (!kind || !remarks.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (kind === 'resolved') {
-        await api.post(`/requests/${row.id}/fast-close`, { reason: remarks, closure_category: 'Work Done' });
-        for (const photo of photos) {
-          const fd = new FormData();
-          fd.append('file', photo);
-          fd.append('stage_key', 'closed');
-          await api.post(`/requests/${row.id}/attachments`, fd);
-        }
-      } else if (kind === 'not_needed') await api.post(`/requests/${row.id}/fast-close`, { reason: remarks, closure_category: 'Not Feasible' });
-      else await api.post(`/requests/${row.id}/hold`, { reason: remarks });
-      setKind('');
-      setRemarks('');
-      setPhotos([]);
-      onDone();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const kindColor = ({ resolved: 'var(--good)', not_needed: 'var(--bad)', hold: 'var(--warn)' } as Record<string, string>)[kind];
-
-  return (
-    <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-      <select
-        className="select" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} disabled={busy}
-        style={{ width: 100, height: 30, ...(kindColor ? { borderColor: kindColor, color: kindColor, fontWeight: 600 } : {}) }}
-      >
-        <option value="">Select…</option>
-        <option value="resolved">Resolved</option>
-        <option value="not_needed">Not Needed</option>
-        <option value="hold">Hold</option>
-      </select>
-      <input className="input" placeholder="Remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={busy} style={{ width: 110, height: 30 }} title={error ?? undefined} />
-      {kind === 'resolved' && (
-        <label className="btn sm" title={photos.length ? photos.map((p) => p.name).join(', ') : 'Attach completion photo(s)'} style={{ cursor: 'pointer' }}>
-          {photos.length ? `📷✓${photos.length}` : '📷'}
-          <input type="file" accept="image/*" multiple hidden onChange={(e) => setPhotos(Array.from(e.target.files ?? []))} disabled={busy} />
-        </label>
-      )}
-      <button className="btn sm" disabled={busy || !kind || !remarks.trim() || (kind === 'resolved' && !photos.length)} onClick={apply} title={error ?? (kind === 'resolved' && !photos.length ? 'Photo required to resolve' : 'Apply')}>{busy ? '…' : 'Go'}</button>
-    </div>
-  );
-}
-
-/** Closed rows: the Resolve/Hold cell becomes a small editor for the remark left at close time. */
-function ClosedRemarkEdit({ row, onDone }: { row: RequestRow; onDone: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(row.closure_note ?? row.pc_remark ?? '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (row.status !== 'closed') return <span className="muted small">—</span>;
-
-  if (!editing) {
-    return (
-      <button
-        className="btn sm" title="Edit closing remarks"
-        onClick={(e) => { e.stopPropagation(); setValue(row.closure_note ?? row.pc_remark ?? ''); setEditing(true); }}
-      >
-        ✏️ Edit
-      </button>
-    );
-  }
-
-  const save = async () => {
-    if (!value.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`/requests/${row.id}/closure-note`, { closure_note: value });
-      setEditing(false);
-      onDone();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-      <input className="input" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} style={{ width: 150, height: 30 }} title={error ?? undefined} />
-      <button className="btn sm" disabled={busy || !value.trim()} onClick={save} title={error ?? 'Save'}>{busy ? '…' : 'Save'}</button>
-      <button className="btn sm" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
-    </div>
   );
 }
 
@@ -137,9 +30,12 @@ function remarkTone(remark: string | null): { bg: string; text: string } | null 
 
 const BAD_CLOSURE = /not feasible|wrong complaint|rejected/i;
 
-/** Closed rows go green by status (not remark guesswork) — red only for a bad-outcome closure category. */
+/** Closed rows go green by status (not remark guesswork) — red only for a bad-outcome closure category.
+ *  On-hold rows go orange by status too, since hold_reason doesn't flow through the legacy pc_remark text. */
 function rowTone(r: RequestRow): { bg: string; text: string } | null {
   if (r.status === 'closed') return BAD_CLOSURE.test(r.closure_category ?? '') ? { bg: '#fca5a1', text: '#7a1712' } : { bg: '#86efac', text: '#0b4a24' };
+  if (r.status === 'cancelled') return { bg: '#fca5a1', text: '#7a1712' };
+  if (r.status === 'on_hold') return { bg: '#fdba74', text: '#7a3b06' };
   return remarkTone(r.pc_remark);
 }
 
@@ -154,6 +50,7 @@ function fmsRef(remark: string | null): string | null {
  *  the remark with our own closure_note, which drops the original FMS sheet reference — re-append it (if the
  *  sheet remark actually had one) so a closed card can still be traced back to the old sheet. */
 function displayRemark(r: RequestRow): string | null {
+  if (r.status === 'on_hold') return r.hold_reason || r.pc_remark;
   if (r.status !== 'closed') return r.pc_remark;
   const base = r.closure_note || r.pc_remark;
   const ref = fmsRef(r.pc_remark);
@@ -166,10 +63,8 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
   rows: RequestRow[]; sort?: SortState; onSort?: (s: SortState) => void; emptyText?: string; compact?: boolean; onUpdate?: () => void;
 }) {
   const nav = useNavigate();
-  const { can } = useAuth();
   if (!rows.length) return <Empty title={emptyText} />;
   const closed = (r: RequestRow) => r.status === 'closed' || r.status === 'cancelled';
-  const showQuickAction = !compact && onUpdate && can('request.manage');
   return (
     <div className="table-wrap">
       <table className={`table${compact ? ' compact' : ''}`}>
@@ -184,7 +79,6 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
             <th>Next Action</th>
             <Th label="Due" k="planned" sort={sort} onSort={onSort} />
             {!compact && <th>Remarks</th>}
-            {showQuickAction && <th>Resolve / Hold</th>}
           </tr>
         </thead>
         <tbody>
@@ -211,7 +105,6 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
                     {displayRemark(r) || <span className="muted">—</span>}
                   </td>
                 )}
-                {showQuickAction && <td><QuickAction row={r} onDone={onUpdate} /></td>}
               </tr>
             );
           })}
