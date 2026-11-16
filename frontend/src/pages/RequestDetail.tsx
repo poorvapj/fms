@@ -373,15 +373,13 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
       setBusy(false);
     }
   };
-  const addPhotos = async (files: File[]) => {
-    const newFiles = files.filter((f) => !photos.includes(f));
-    setPhotos(files);
-    if (!newFiles.length) return;
+  const submitPhotos = async () => {
+    if (!photos.length) return;
     setBusy(true);
     setError(null);
     try {
       let result: Detail | null = null;
-      for (const file of newFiles) {
+      for (const file of photos) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('stage_key', d.request.current_stage_key ?? '');
@@ -401,7 +399,8 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
       <div className="card-body stack">
         <textarea className="input" style={{ minHeight: 60 }} placeholder="Write a comment…" value={text} onChange={(e) => setText(e.target.value)} />
         <button className="btn sm" disabled={busy || !text.trim()} onClick={() => post('comment')}>Post comment</button>
-        <ImagePicker files={photos} onChange={addPhotos} max={50} accept="image/*" label="Add photo" onError={setError} />
+        <ImagePicker files={photos} onChange={setPhotos} max={50} accept="image/*" label="Add photo" onError={setError} />
+        {photos.length > 0 && <button className="btn sm" disabled={busy} onClick={submitPhotos}>{busy ? 'Uploading…' : `Submit ${photos.length} photo${photos.length > 1 ? 's' : ''}`}</button>}
         <div className="row">
           <input className="input" placeholder="https://… (photo / document link)" value={link} onChange={(e) => setLink(e.target.value)} />
           <button className="btn sm" disabled={busy || !/^https?:\/\//.test(link)} onClick={() => post('link')}>Add</button>
