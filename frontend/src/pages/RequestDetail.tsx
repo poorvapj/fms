@@ -539,8 +539,9 @@ export function RequestDetail() {
 
   const tabDefs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
-    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Communication' }, { key: 'history', label: 'History' },
+    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' }, { key: 'history', label: 'History' },
   ];
+  const closingPhotos = data.attachments.filter((a) => a.stage_key === 'closed');
 
   return (
     <>
@@ -653,6 +654,12 @@ export function RequestDetail() {
 
       {tab === 'communication' && (
         <div className="stack">
+          {closingPhotos.length > 0 && (
+            <div className="card">
+              <div className="card-head"><h3>Work done photos</h3><span className="muted small">{closingPhotos.length}</span></div>
+              <div className="card-body"><Evidence items={closingPhotos} /></div>
+            </div>
+          )}
           {can('request.comment') && <CommentBox d={data} onDone={setData} />}
           <div className="card">
             <div className="card-head"><h3>Comments</h3></div>
