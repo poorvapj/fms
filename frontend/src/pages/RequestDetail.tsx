@@ -19,38 +19,63 @@ function driveThumb(url: string): string | null {
   return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w500` : null;
 }
 
-function Evidence({ items }: { items: Attachment[] }) {
+function Evidence({ items, onDelete }: { items: Attachment[]; onDelete?: (id: number) => void }) {
   if (!items.length) return null;
+  const remove = async (a: Attachment) => {
+    if (!window.confirm('Remove this attachment?')) return;
+    try { await api.del(`/attachments/${a.id}`); onDelete?.(a.id); }
+    catch (e) { window.alert(errorText(e)); }
+  };
+  const DeleteBtn = ({ a }: { a: Attachment }) => (
+    onDelete ? (
+      <button
+        type="button" aria-label="Remove" title="Remove"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); remove(a); }}
+        style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 0, background: 'var(--bad, #c23)', color: '#fff', lineHeight: '20px', padding: 0, cursor: 'pointer' }}
+      >
+        ×
+      </button>
+    ) : null
+  );
   return (
     <div className="evidence">
       {items.map((a) => {
         if (a.kind === 'file' && a.mime?.startsWith('image/')) {
           return (
-            <a key={a.id} href={fileUrl(a)} target="_blank" rel="noreferrer" title={a.caption ?? a.file_name ?? ''} style={{ padding: 0, border: 0 }}>
-              <img className="thumb" src={fileUrl(a)} alt={a.caption ?? a.file_name ?? 'image'} loading="lazy" />
-            </a>
+            <div key={a.id} style={{ position: 'relative' }}>
+              <a href={fileUrl(a)} target="_blank" rel="noreferrer" title={a.caption ?? a.file_name ?? ''} style={{ padding: 0, border: 0 }}>
+                <img className="thumb" src={fileUrl(a)} alt={a.caption ?? a.file_name ?? 'image'} loading="lazy" />
+              </a>
+              <DeleteBtn a={a} />
+            </div>
           );
         }
         const thumb = a.kind === 'url' && a.url ? driveThumb(a.url) : null;
         if (thumb) {
           return (
-            <a key={a.id} href={a.url!} target="_blank" rel="noreferrer noopener" title={a.caption ?? 'image'} style={{ padding: 0, border: 0 }}>
-              <img
-                className="thumb" src={thumb} alt={a.caption ?? 'image'} loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  (e.currentTarget.nextElementSibling as HTMLElement | null)?.style.removeProperty('display');
-                }}
-              />
-              <span style={{ display: 'none' }}><Icon name="link" size={13} />{a.caption ?? 'Link'}</span>
-            </a>
+            <div key={a.id} style={{ position: 'relative' }}>
+              <a href={a.url!} target="_blank" rel="noreferrer noopener" title={a.caption ?? 'image'} style={{ padding: 0, border: 0 }}>
+                <img
+                  className="thumb" src={thumb} alt={a.caption ?? 'image'} loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    (e.currentTarget.nextElementSibling as HTMLElement | null)?.style.removeProperty('display');
+                  }}
+                />
+                <span style={{ display: 'none' }}><Icon name="link" size={13} />{a.caption ?? 'Link'}</span>
+              </a>
+              <DeleteBtn a={a} />
+            </div>
           );
         }
         return (
-          <a key={a.id} href={fileUrl(a)} target="_blank" rel="noreferrer noopener">
-            <Icon name={a.kind === 'url' ? 'link' : 'file'} size={13} />
-            {a.caption ?? a.file_name ?? 'Link'}{a.size ? ` · ${fmtBytes(a.size)}` : ''}
-          </a>
+          <div key={a.id} style={{ position: 'relative' }}>
+            <a href={fileUrl(a)} target="_blank" rel="noreferrer noopener">
+              <Icon name={a.kind === 'url' ? 'link' : 'file'} size={13} />
+              {a.caption ?? a.file_name ?? 'Link'}{a.size ? ` · ${fmtBytes(a.size)}` : ''}
+            </a>
+            <DeleteBtn a={a} />
+          </div>
         );
       })}
     </div>
@@ -649,7 +674,7 @@ export function RequestDetail() {
       {tab === 'evidence' && (
         <div className="card">
           <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{evidenceAttachments.length}</span></div>
-          <div className="card-body"><Evidence items={evidenceAttachments} /></div>
+          <div className="card-body"><Evidence items={evidenceAttachments} onDelete={can('request.comment') ? reload : undefined} /></div>
         </div>
       )}
 
@@ -658,7 +683,7 @@ export function RequestDetail() {
           {commentPhotos.length > 0 && (
             <div className="card">
               <div className="card-head"><h3>Photos</h3><span className="muted small">{commentPhotos.length}</span></div>
-              <div className="card-body"><Evidence items={commentPhotos} /></div>
+              <div className="card-body"><Evidence items={commentPhotos} onDelete={can('request.comment') ? reload : undefined} /></div>
             </div>
           )}
           {can('request.comment') && <CommentBox d={data} onDone={setData} />}
