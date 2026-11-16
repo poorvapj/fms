@@ -296,7 +296,7 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
           <div className="alert warn">
             <Icon name="alert" />This stage needs evidence before it can be marked done.
             <div className="stack" style={{ marginTop: 8, gap: 8 }}>
-              <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={5} accept="image/*" label="Upload photo" onError={setError} />
+              <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
               {busy === 'evidence' && <div className="muted small">Uploading…</div>}
               <div className="row">
                 <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />

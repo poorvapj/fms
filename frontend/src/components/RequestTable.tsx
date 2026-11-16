@@ -22,7 +22,7 @@ function Th({ label, k, sort, onSort }: { label: string; k?: string; sort?: Sort
 function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
   const [kind, setKind] = useState<'' | 'resolved' | 'not_needed' | 'hold'>('');
   const [remarks, setRemarks] = useState('');
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const live = !['closed', 'cancelled'].includes(row.status);
@@ -35,7 +35,7 @@ function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
     try {
       if (kind === 'resolved') {
         await api.post(`/requests/${row.id}/fast-close`, { reason: remarks, closure_category: 'Work Done' });
-        if (photo) {
+        for (const photo of photos) {
           const fd = new FormData();
           fd.append('file', photo);
           fd.append('stage_key', 'closed');
@@ -45,7 +45,7 @@ function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
       else await api.post(`/requests/${row.id}/hold`, { reason: remarks });
       setKind('');
       setRemarks('');
-      setPhoto(null);
+      setPhotos([]);
       onDone();
     } catch (e) {
       setError(errorText(e));
@@ -69,9 +69,9 @@ function QuickAction({ row, onDone }: { row: RequestRow; onDone: () => void }) {
       </select>
       <input className="input" placeholder="Remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={busy} style={{ width: 110, height: 30 }} title={error ?? undefined} />
       {kind === 'resolved' && (
-        <label className="btn sm" title={photo ? photo.name : 'Attach completion photo'} style={{ cursor: 'pointer' }}>
-          {photo ? '📷✓' : '📷'}
-          <input type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} disabled={busy} />
+        <label className="btn sm" title={photos.length ? photos.map((p) => p.name).join(', ') : 'Attach completion photo(s)'} style={{ cursor: 'pointer' }}>
+          {photos.length ? `📷✓${photos.length}` : '📷'}
+          <input type="file" accept="image/*" multiple hidden onChange={(e) => setPhotos(Array.from(e.target.files ?? []))} disabled={busy} />
         </label>
       )}
       <button className="btn sm" disabled={busy || !kind || !remarks.trim()} onClick={apply} title={error ?? 'Apply'}>{busy ? '…' : 'Go'}</button>
