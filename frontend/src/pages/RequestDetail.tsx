@@ -361,6 +361,81 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   );
 }
 
+function ClosurePhotosAdd({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!files.length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let result: Detail | null = null;
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('stage_key', 'closed');
+        result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+      }
+      if (result) onDone(result);
+      setFiles([]);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <ImagePicker files={files} onChange={setFiles} max={50} accept="image/*" label="Add photo" onError={setError} />
+      {files.length > 0 && <button className="btn sm" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : `Submit ${files.length} photo${files.length > 1 ? 's' : ''}`}</button>}
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
+function ClosureNoteEdit({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(d.request.closure_note ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!editing) {
+    return (
+      <div className="small">
+        <span className="muted">Remarks:</span> {d.request.closure_note || <span className="muted">—</span>}{' '}
+        <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => { setValue(d.request.closure_note ?? ''); setEditing(true); }}>✏️ Edit</button>
+      </div>
+    );
+  }
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api.post<Detail>(`/requests/${d.request.id}/closure-note`, { closure_note: value }));
+      setEditing(false);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <textarea className="input" style={{ minHeight: 60 }} value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
+      <div className="row">
+        <button className="btn sm primary" disabled={busy || !value.trim()} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="btn sm" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+      </div>
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
 function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -553,7 +628,7 @@ export function RequestDetail() {
     ...(r.status === 'closed' ? [{ key: 'closed' as const, label: 'Closed' }] : []),
     { key: 'history', label: 'History' },
   ];
-  const commentPhotos = data.attachments.filter((a) => a.source === 'comment' || a.stage_key === 'closed');
+  const commentPhotos = data.attachments.filter((a) => a.source === 'comment');
   const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment');
 
   return (
@@ -690,8 +765,9 @@ export function RequestDetail() {
           <div className="card-head"><h3>Closing remarks & photos</h3></div>
           <div className="card-body stack">
             {r.closure_category && fact('Closure category', r.closure_category)}
-            {r.closure_note ? <div className="small"><span className="muted">Remarks:</span> {r.closure_note}</div> : <Empty title="No closing remarks" />}
+            {can('request.manage') ? <ClosureNoteEdit d={data} onDone={setData} /> : (r.closure_note ? <div className="small"><span className="muted">Remarks:</span> {r.closure_note}</div> : <Empty title="No closing remarks" />)}
             <Evidence items={closurePhotos} />
+            {can('request.comment') && <ClosurePhotosAdd d={data} onDone={setData} />}
           </div>
         </div>
       )}
