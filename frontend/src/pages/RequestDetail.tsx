@@ -333,6 +333,7 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState('');
+  const [photos, setPhotos] = useState<File[]>([]);
   const post = async (kind: 'comment' | 'link') => {
     setBusy(true);
     setError(null);
@@ -348,12 +349,35 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
       setBusy(false);
     }
   };
+  const addPhotos = async (files: File[]) => {
+    const newFiles = files.filter((f) => !photos.includes(f));
+    setPhotos(files);
+    if (!newFiles.length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let result: Detail | null = null;
+      for (const file of newFiles) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('stage_key', d.request.current_stage_key ?? '');
+        result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+      }
+      if (result) onDone(result);
+      setPhotos([]);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="card">
-      <div className="card-head"><h3>Add comment or link</h3></div>
+      <div className="card-head"><h3>Add comment, photo or link</h3></div>
       <div className="card-body stack">
         <textarea className="input" style={{ minHeight: 60 }} placeholder="Write a comment…" value={text} onChange={(e) => setText(e.target.value)} />
         <button className="btn sm" disabled={busy || !text.trim()} onClick={() => post('comment')}>Post comment</button>
+        <ImagePicker files={photos} onChange={addPhotos} max={50} accept="image/*" label="Add photo" onError={setError} />
         <div className="row">
           <input className="input" placeholder="https://… (photo / document link)" value={link} onChange={(e) => setLink(e.target.value)} />
           <button className="btn sm" disabled={busy || !/^https?:\/\//.test(link)} onClick={() => post('link')}>Add</button>
