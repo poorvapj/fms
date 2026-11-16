@@ -364,7 +364,7 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
     try {
       onDone(kind === 'comment'
         ? await api.post<Detail>(`/requests/${d.request.id}/comments`, { comment: text })
-        : await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: link, stage_key: d.request.current_stage_key ?? undefined }));
+        : await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: link, source: 'comment' }));
       setText('');
       setLink('');
     } catch (e) {
@@ -382,7 +382,7 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
       for (const file of photos) {
         const fd = new FormData();
         fd.append('file', file);
-        fd.append('stage_key', d.request.current_stage_key ?? '');
+        fd.append('source', 'comment');
         result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
       }
       if (result) onDone(result);
@@ -541,7 +541,8 @@ export function RequestDetail() {
     { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
     { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' }, { key: 'history', label: 'History' },
   ];
-  const closingPhotos = data.attachments.filter((a) => a.stage_key === 'closed');
+  const commentPhotos = data.attachments.filter((a) => a.source === 'comment' || a.stage_key === 'closed');
+  const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment');
 
   return (
     <>
@@ -647,17 +648,17 @@ export function RequestDetail() {
 
       {tab === 'evidence' && (
         <div className="card">
-          <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{data.attachments.length}</span></div>
-          <div className="card-body"><Evidence items={data.attachments} /></div>
+          <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{evidenceAttachments.length}</span></div>
+          <div className="card-body"><Evidence items={evidenceAttachments} /></div>
         </div>
       )}
 
       {tab === 'communication' && (
         <div className="stack">
-          {closingPhotos.length > 0 && (
+          {commentPhotos.length > 0 && (
             <div className="card">
-              <div className="card-head"><h3>Work done photos</h3><span className="muted small">{closingPhotos.length}</span></div>
-              <div className="card-body"><Evidence items={closingPhotos} /></div>
+              <div className="card-head"><h3>Photos</h3><span className="muted small">{commentPhotos.length}</span></div>
+              <div className="card-body"><Evidence items={commentPhotos} /></div>
             </div>
           )}
           {can('request.comment') && <CommentBox d={data} onDone={setData} />}

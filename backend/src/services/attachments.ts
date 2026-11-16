@@ -31,7 +31,7 @@ export async function removeFiles(ids: (ObjectId | null | undefined)[]) {
 
 export async function addAttachment(
   requestId: number,
-  input: { stage_key?: string; url?: string; caption?: string; file?: UploadFile },
+  input: { stage_key?: string; url?: string; caption?: string; file?: UploadFile; source?: 'ui' | 'comment' },
   user: AuthUser,
 ) {
   const r = await loadRequest(requestId);
@@ -52,7 +52,7 @@ export async function addAttachment(
     doc = { kind: 'url', url };
   }
   const id = await nextId('attachments');
-  await col.attachments().insertOne({ _id: id, request_id: requestId, stage_key: stageKey, ...doc, caption, source: 'ui', uploaded_by: user.id, created_at: now });
+  await col.attachments().insertOne({ _id: id, request_id: requestId, stage_key: stageKey, ...doc, caption, source: input.source ?? 'ui', uploaded_by: user.id, created_at: now });
   await col.requests().updateOne({ _id: requestId }, { $set: { modified_in_app: true, updated_at: now } });
   await logEvent(requestId, 'attachment', `Added ${input.file ? `file ${input.file.originalname}` : 'link'}${caption ? ` — ${caption}` : ''}`, { stageKey, user });
   return { id };

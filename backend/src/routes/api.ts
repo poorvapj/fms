@@ -155,7 +155,7 @@ for (const [name, fn] of Object.entries(actions)) {
   });
 }
 api.post('/requests/:id/attachments', evidenceUpload.single('file'), async (req, res) => {
-  await addAttachment(id(req), { stage_key: req.body?.stage_key, url: req.body?.url, caption: req.body?.caption, file: req.file }, req.user!);
+  await addAttachment(id(req), { stage_key: req.body?.stage_key, url: req.body?.url, caption: req.body?.caption, file: req.file, source: req.body?.source === 'comment' ? 'comment' : 'ui' }, req.user!);
   res.status(201).json(await getRequestDetail(id(req), req.user!));
 });
 api.get('/attachments/:id/file', async (req, res, next) => {
