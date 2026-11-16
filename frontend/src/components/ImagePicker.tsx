@@ -32,8 +32,8 @@ export function ImagePicker({ files, onChange, max = 5, accept = 'image/*', labe
         </div>
       ))}
       {files.length < max && (
-        <label className="upload-add">
-          <span><Icon name="camera" size={20} /><br />{label}</span>
+        <label className="upload-add" title={files.length ? 'Add more photos' : label}>
+          {files.length ? <span style={{ fontSize: 28, lineHeight: 1 }}>+</span> : <span><Icon name="camera" size={20} /><br />{label}</span>}
           <input ref={input} type="file" accept={accept} multiple capture={undefined} hidden onChange={(e) => add(e.target.files)} />
         </label>
       )}
