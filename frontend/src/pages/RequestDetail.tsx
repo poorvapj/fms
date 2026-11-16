@@ -674,7 +674,7 @@ export function RequestDetail() {
       {tab === 'evidence' && (
         <div className="card">
           <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{evidenceAttachments.length}</span></div>
-          <div className="card-body"><Evidence items={evidenceAttachments} onDelete={can('request.comment') ? reload : undefined} /></div>
+          <div className="card-body"><Evidence items={evidenceAttachments} /></div>
         </div>
       )}
 
