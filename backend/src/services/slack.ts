@@ -177,9 +177,10 @@ export async function handleSlackInteraction(payload: any) {
 async function siteVisitUser(requestId: number, slackUserId: string | undefined): Promise<{ user: AuthUser; r: RequestDoc } | null> {
   const r = await loadRequest(requestId);
   const eng = slackUserId ? await col.engineers().findOne({ slack_user_id: slackUserId }) : null;
+  const extra = !eng && slackUserId ? SITE_VISIT_NOTIFY_EXTRA.find((p) => p.slack_user_id === slackUserId) : null;
   // 'admin' (not 'engineer') so this isn't blocked by the assigned-site-engineer binding check —
   // the Yes/No DM goes to Kuldeep and Arun regardless of who's formally assigned on the record.
-  const user: AuthUser = { id: 0, username: 'slack', name: eng?.name ?? 'Slack', role: 'admin', engineer_id: eng?._id ?? null, must_change_password: false };
+  const user: AuthUser = { id: 0, username: 'slack', name: eng?.name ?? extra?.name ?? 'Slack', role: 'admin', engineer_id: eng?._id ?? null, must_change_password: false };
   return { user, r };
 }
 

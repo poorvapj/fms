@@ -614,6 +614,7 @@ function StageStrip({ d }: { d: Detail }) {
           <div className="stage-strip-status muted small">
             {s.status === 'active' ? (s.planned_at ? `Due ${fmtDateTime(s.planned_at)}` : 'IN PROGRESS') : cap(s.status).toUpperCase()}
           </div>
+          {s.status === 'completed' && s.responsible_name && <div className="muted small">by {s.responsible_name}</div>}
         </div>
       ))}
     </div>
