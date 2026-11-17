@@ -166,18 +166,19 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
         : dialog === 'resolve-close' ? { reason: text, closure_category: 'Work Done' }
         : { reason: text };
       const endpoint = dialog === 'resolve-close' ? 'fast-close' : dialog;
-      let result = await api.post<Detail>(`/requests/${r.id}/${endpoint}`, body);
-      for (const photo of photos) {
+      let result: Detail | undefined;
+      for (const photo of [...photos]) {
         const fd = new FormData();
         fd.append('file', photo);
         fd.append('stage_key', 'closed');
         result = await api.post<Detail>(`/requests/${r.id}/attachments`, fd);
+        setPhotos((prev) => prev.filter((p) => p !== photo));
       }
+      result = await api.post<Detail>(`/requests/${r.id}/${endpoint}`, body);
       onDone(result);
       setDialog(null);
       setText('');
       setClosureCategory('');
-      setPhotos([]);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -288,13 +289,13 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
     setBusy(kind);
     setError(null);
     try {
-      for (const file of evidenceFiles) {
+      for (const file of [...evidenceFiles]) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('stage_key', stage.stage_key);
         await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+        setEvidenceFiles((prev) => prev.filter((f) => f !== file));
       }
-      setEvidenceFiles([]);
       let result: Detail;
       if (kind === 'skip') {
         result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/skip`, { reason: comments });
@@ -392,14 +393,14 @@ function ClosurePhotosAdd({ d, onDone }: { d: Detail; onDone: (nd: Detail) => vo
     setError(null);
     try {
       let result: Detail | null = null;
-      for (const file of files) {
+      for (const file of [...files]) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('stage_key', 'closed');
         result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+        setFiles((prev) => prev.filter((f) => f !== file));
       }
       if (result) onDone(result);
-      setFiles([]);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -483,14 +484,14 @@ function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) 
     setError(null);
     try {
       let result: Detail | null = null;
-      for (const file of photos) {
+      for (const file of [...photos]) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('source', 'comment');
         result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
+        setPhotos((prev) => prev.filter((p) => p !== file));
       }
       if (result) onDone(result);
-      setPhotos([]);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -649,7 +650,7 @@ export function RequestDetail() {
     { key: 'history', label: 'History' },
   ];
   const commentPhotos = data.attachments.filter((a) => a.source === 'comment');
-  const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment');
+  const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment' && a.stage_key !== 'closed');
 
   return (
     <>
