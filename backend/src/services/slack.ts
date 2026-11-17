@@ -2,6 +2,7 @@ import type { AuthUser } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
 import { WORK_TYPES } from '../domain/workflow.ts';
+import { addAttachment } from './attachments.ts';
 import { masterNames } from './masters.ts';
 import { completeStage } from './stages.ts';
 import { logEvent } from './events.ts';
@@ -166,6 +167,9 @@ export async function handleSlackInteraction(payload: any) {
   if (payload.type === 'view_submission' && payload.view?.callback_id === 'site_visit_no_reason') {
     return handleNoSubmit(payload);
   }
+  if (payload.type === 'view_submission' && payload.view?.callback_id === 'site_visit_yes_confirm') {
+    return handleYesSubmit(payload);
+  }
 }
 
 /** Resolves to whichever engineer actually clicked the Slack button — not necessarily the job
@@ -179,13 +183,46 @@ async function siteVisitUser(requestId: number, slackUserId: string | undefined)
   return { user, r };
 }
 
+/** "Yes, visited" opens a small modal offering an optional proof photo — never blocks on it. */
 async function handleYes(requestId: number, payload: any) {
-  const found = await siteVisitUser(requestId, payload.user?.id);
-  const responseUrl = payload.response_url;
+  await slackApi('views.open', {
+    trigger_id: payload.trigger_id,
+    view: {
+      type: 'modal',
+      callback_id: 'site_visit_yes_confirm',
+      private_metadata: JSON.stringify({ requestId, responseUrl: payload.response_url, slackUserId: payload.user?.id }),
+      title: { type: 'plain_text', text: 'Site visit done' },
+      submit: { type: 'plain_text', text: 'Mark Done' },
+      close: { type: 'plain_text', text: 'Cancel' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'photo_block',
+          optional: true,
+          label: { type: 'plain_text', text: 'Photo (optional, as proof)' },
+          element: { type: 'file_input', action_id: 'photo', filetypes: ['jpg', 'jpeg', 'png', 'heic', 'webp'], max_files: 1 },
+        },
+      ],
+    },
+  });
+}
+
+async function handleYesSubmit(payload: any) {
+  const { requestId, responseUrl, slackUserId } = JSON.parse(payload.view.private_metadata);
+  const found = await siteVisitUser(requestId, slackUserId);
   if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
-    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}. Thanks!` });
+    const file = payload.view.state.values.photo_block?.photo?.files?.[0];
+    if (file?.url_private) {
+      const res = await fetch(file.url_private, { headers: { Authorization: `Bearer ${config.slackBotToken}` } });
+      const buffer = Buffer.from(await res.arrayBuffer());
+      await addAttachment(requestId, {
+        stage_key: 'site_visit',
+        file: { originalname: file.name ?? 'site-visit.jpg', mimetype: file.mimetype ?? 'image/jpeg', size: buffer.length, buffer },
+      }, found.user);
+    }
+    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${file ? ' (with photo)' : ''}. Thanks!` });
   } catch (err) {
     await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
   }
