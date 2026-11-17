@@ -67,3 +67,13 @@ app.listen(config.port, () => {
   console.log(`Job Card Management API [${config.env.toUpperCase()}] listening on http://localhost:${config.port}  (frontend: ${config.frontendUrl})`);
   console.log(`MongoDB database: ${config.mongoDb}`);
 });
+
+// Render's free tier spins the service down after ~15 min with no inbound traffic, which makes it miss
+// Slack's 3-second interactivity deadline (the request arrives while the instance is still waking up).
+// A self-ping to our own public URL every 10 minutes counts as inbound traffic and keeps it awake.
+const externalUrl = process.env.RENDER_EXTERNAL_URL;
+if (externalUrl) {
+  setInterval(() => {
+    fetch(`${externalUrl}/api/public/env`).catch(() => {});
+  }, 10 * 60 * 1000);
+}
