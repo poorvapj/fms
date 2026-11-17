@@ -51,7 +51,7 @@ export const config = {
    * Local: loopback only. Vercel -> Render: 2.
    */
   trustProxy: /^\d+$/.test(process.env.TRUST_PROXY ?? '') ? Number(process.env.TRUST_PROXY) : (process.env.TRUST_PROXY || (ON_RENDER ? 2 : 'loopback')),
-  maxUploadMb: 15,
+  maxUploadMb: 100, // raised to allow short proof videos at closing, not just photos
   /** Slack bot for site-visit Yes/No notifications (backend/.env). Unset disables the feature entirely. */
   slackBotToken: process.env.SLACK_BOT_TOKEN ?? '',
   slackSigningSecret: process.env.SLACK_SIGNING_SECRET ?? '',

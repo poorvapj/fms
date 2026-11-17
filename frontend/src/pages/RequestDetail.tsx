@@ -237,8 +237,8 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
             <Field label="Remarks" required>
               <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
             </Field>
-            <Field label="Photo" required>
-              <ImagePicker files={photos} onChange={setPhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
+            <Field label="Photo or video" required>
+              <ImagePicker files={photos} onChange={setPhotos} max={50} accept="image/*,video/mp4,video/quicktime" maxMb={100} label="Upload photo/video" onError={setError} />
             </Field>
           </> : (
             <Field label={dialog === 'resume' ? 'Comment (optional)' : 'Reason'} required={dialog !== 'resume'}>
@@ -351,7 +351,11 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
         <div className={needsEvidence ? 'alert warn' : undefined}>
           {needsEvidence && <><Icon name="alert" />This stage needs evidence before it can be marked done.</>}
           <div className="stack" style={{ marginTop: needsEvidence ? 8 : 0, gap: 8 }}>
-            <ImagePicker files={evidenceFiles} onChange={pickEvidencePhotos} max={50} accept="image/*" label="Upload photo" onError={setError} />
+            <ImagePicker
+              files={evidenceFiles} onChange={pickEvidencePhotos} max={50} onError={setError}
+              accept={needsClosure ? 'image/*,video/mp4,video/quicktime' : 'image/*'} maxMb={needsClosure ? 100 : undefined}
+              label={needsClosure ? 'Upload photo/video' : 'Upload photo'}
+            />
             {busy === 'evidence' && <div className="muted small">Uploading…</div>}
             <div className="row">
               <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
@@ -410,7 +414,7 @@ function ClosurePhotosAdd({ d, onDone }: { d: Detail; onDone: (nd: Detail) => vo
 
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <ImagePicker files={files} onChange={setFiles} max={50} accept="image/*" label="Add photo" onError={setError} />
+      <ImagePicker files={files} onChange={setFiles} max={50} accept="image/*,video/mp4,video/quicktime" maxMb={100} label="Add photo/video" onError={setError} />
       {files.length > 0 && <button className="btn sm" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : `Submit ${files.length} photo${files.length > 1 ? 's' : ''}`}</button>}
       <ErrorBox error={error} />
     </div>
