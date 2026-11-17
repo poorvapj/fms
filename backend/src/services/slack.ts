@@ -183,9 +183,11 @@ async function siteVisitUser(requestId: number, slackUserId: string | undefined)
   return { user, r };
 }
 
-/** "Yes, visited" opens a small modal offering an optional proof photo — never blocks on it. */
+/** "Yes, visited" opens a small modal offering an optional proof photo — never blocks on it.
+ *  If the modal itself fails to open (e.g. a Slack API/permission hiccup), fall back to marking
+ *  the stage done immediately, same as before the photo option existed, instead of doing nothing. */
 async function handleYes(requestId: number, payload: any) {
-  await slackApi('views.open', {
+  const opened = await slackApi('views.open', {
     trigger_id: payload.trigger_id,
     view: {
       type: 'modal',
@@ -205,6 +207,17 @@ async function handleYes(requestId: number, payload: any) {
       ],
     },
   });
+  if (opened.ok) return;
+  console.error('views.open failed, falling back to direct complete:', opened.error);
+  const found = await siteVisitUser(requestId, payload.user?.id);
+  const responseUrl = payload.response_url;
+  if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
+  try {
+    await completeStage(requestId, 'site_visit', {}, found.user);
+    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}. Thanks!` });
+  } catch (err) {
+    await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
+  }
 }
 
 async function handleYesSubmit(payload: any) {
