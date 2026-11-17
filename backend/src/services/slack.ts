@@ -113,35 +113,45 @@ export async function notifyPublicSubmission(r: RequestDoc, images: { buffer: Bu
   for (const img of images) await uploadImageBytesToSlack(img.buffer, channel, r.request_no);
 }
 
-/** Site visit stage just went active — DM the assigned site engineer if we have their Slack ID, once. */
+/** Names of the engineers who should always get the Site Visit Yes/No DM, whether or not a
+ *  site engineer has been formally assigned on the job card yet. */
+const SITE_VISIT_NOTIFY = ['Kuldeep', 'Arun Batham'];
+/** Additional people (not engineer records) who should get the same DM, just to stay in the loop —
+ *  Poorva isn't a field engineer, so she's listed by Slack user ID directly instead. */
+const SITE_VISIT_NOTIFY_EXTRA = [{ name: 'Poorva Jain', slack_user_id: 'U0BSHH0PJN5' }];
+
+/** Site visit stage just went active — DM Kuldeep and Arun (whoever actually goes does the visit),
+ *  once per job card, regardless of whether a site engineer has been assigned on the record. */
 export async function notifySiteVisitIfNeeded(r: RequestDoc) {
   if (!slackEnabled()) return;
   const stage = r.stages.find((s) => s.stage_key === 'site_visit');
-  if (!stage || stage.status !== 'active' || !r.site_engineer_id) return;
+  if (!stage || stage.status !== 'active') return;
   const already = await col.events().findOne({ request_id: r._id, type: 'slack_notified', stage_key: 'site_visit' });
   if (already) return;
-  const eng = await col.engineers().findOne({ _id: r.site_engineer_id });
-  if (!eng?.slack_user_id) return;
+  const engineers = await col.engineers().find({ name: { $in: SITE_VISIT_NOTIFY }, slack_user_id: { $nin: [null, ''] } }).toArray();
+  const recipients = [...engineers, ...SITE_VISIT_NOTIFY_EXTRA];
+  if (!recipients.length) return;
 
   const names = await masterNames();
   const property = names.properties.get(r.property_id) ?? '—';
   const text = `*Site visit requested*\n*Job:* ${r.request_no}\n*Location:* ${property}\n*Details:* ${r.description}`;
-  const res = await slackApi('chat.postMessage', {
-    channel: eng.slack_user_id,
-    text,
-    blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text } },
-      {
-        type: 'actions',
-        elements: [
-          { type: 'button', text: { type: 'plain_text', text: '✅ Yes, visited' }, style: 'primary', action_id: 'site_visit_yes', value: String(r._id) },
-          { type: 'button', text: { type: 'plain_text', text: '❌ No' }, style: 'danger', action_id: 'site_visit_no', value: String(r._id) },
-        ],
-      },
-    ],
-  });
-  await logEvent(r._id, 'slack_notified', `Slack notification sent to ${eng.name} for Site Visit`, { stageKey: 'site_visit', userName: 'Slack' });
-  return res;
+  for (const eng of recipients) {
+    await slackApi('chat.postMessage', {
+      channel: eng.slack_user_id,
+      text,
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text } },
+        {
+          type: 'actions',
+          elements: [
+            { type: 'button', text: { type: 'plain_text', text: '✅ Yes, visited' }, style: 'primary', action_id: 'site_visit_yes', value: String(r._id) },
+            { type: 'button', text: { type: 'plain_text', text: '❌ No' }, style: 'danger', action_id: 'site_visit_no', value: String(r._id) },
+          ],
+        },
+      ],
+    });
+  }
+  await logEvent(r._id, 'slack_notified', `Slack notification sent to ${recipients.map((e) => e.name).join(', ')} for Site Visit`, { stageKey: 'site_visit', userName: 'Slack' });
 }
 
 /** Body of a Slack interactivity POST (verified caller): block_actions or view_submission. */
@@ -158,17 +168,19 @@ export async function handleSlackInteraction(payload: any) {
   }
 }
 
-async function siteVisitUser(requestId: number): Promise<{ user: AuthUser; r: RequestDoc } | null> {
+/** Resolves to whichever engineer actually clicked the Slack button — not necessarily the job
+ *  card's assigned site engineer, since the Yes/No DM goes to Kuldeep and Arun either way. */
+async function siteVisitUser(requestId: number, slackUserId: string | undefined): Promise<{ user: AuthUser; r: RequestDoc } | null> {
   const r = await loadRequest(requestId);
-  if (!r.site_engineer_id) return null;
-  const eng = await col.engineers().findOne({ _id: r.site_engineer_id });
-  if (!eng) return null;
-  const user: AuthUser = { id: 0, username: 'slack', name: eng.name, role: 'engineer', engineer_id: eng._id, must_change_password: false };
+  const eng = slackUserId ? await col.engineers().findOne({ slack_user_id: slackUserId }) : null;
+  // 'admin' (not 'engineer') so this isn't blocked by the assigned-site-engineer binding check —
+  // the Yes/No DM goes to Kuldeep and Arun regardless of who's formally assigned on the record.
+  const user: AuthUser = { id: 0, username: 'slack', name: eng?.name ?? 'Slack', role: 'admin', engineer_id: eng?._id ?? null, must_change_password: false };
   return { user, r };
 }
 
 async function handleYes(requestId: number, payload: any) {
-  const found = await siteVisitUser(requestId);
+  const found = await siteVisitUser(requestId, payload.user?.id);
   const responseUrl = payload.response_url;
   if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
   try {
@@ -185,7 +197,7 @@ async function handleNo(requestId: number, payload: any) {
     view: {
       type: 'modal',
       callback_id: 'site_visit_no_reason',
-      private_metadata: JSON.stringify({ requestId, responseUrl: payload.response_url }),
+      private_metadata: JSON.stringify({ requestId, responseUrl: payload.response_url, slackUserId: payload.user?.id }),
       title: { type: 'plain_text', text: 'Site visit not done' },
       submit: { type: 'plain_text', text: 'Send' },
       close: { type: 'plain_text', text: 'Cancel' },
@@ -202,10 +214,10 @@ async function handleNo(requestId: number, payload: any) {
 }
 
 async function handleNoSubmit(payload: any) {
-  const { requestId, responseUrl } = JSON.parse(payload.view.private_metadata);
+  const { requestId, responseUrl, slackUserId } = JSON.parse(payload.view.private_metadata);
   const reason = payload.view.state.values.reason_block.reason.value as string;
   const r = await loadRequest(requestId);
-  const eng = r.site_engineer_id ? await col.engineers().findOne({ _id: r.site_engineer_id }) : null;
+  const eng = slackUserId ? await col.engineers().findOne({ slack_user_id: slackUserId }) : null;
   const stage = stageOf(r, 'site_visit');
   Object.assign(stage, { attention: true, comments: `Not visited (Slack): ${reason}`, updated_at: nowLocal() });
   refreshState(r);
