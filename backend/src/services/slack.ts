@@ -201,8 +201,8 @@ async function handleYes(requestId: number, payload: any) {
           type: 'input',
           block_id: 'photo_block',
           optional: true,
-          label: { type: 'plain_text', text: 'Photo (optional, as proof)' },
-          element: { type: 'file_input', action_id: 'photo', filetypes: ['jpg', 'jpeg', 'png', 'heic', 'webp'], max_files: 1 },
+          label: { type: 'plain_text', text: 'Photo link (optional, as proof — paste a Google Drive / image URL)' },
+          element: { type: 'plain_text_input', action_id: 'photo' },
         },
       ],
     },
@@ -226,16 +226,11 @@ async function handleYesSubmit(payload: any) {
   if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
-    const file = payload.view.state.values.photo_block?.photo?.files?.[0];
-    if (file?.url_private) {
-      const res = await fetch(file.url_private, { headers: { Authorization: `Bearer ${config.slackBotToken}` } });
-      const buffer = Buffer.from(await res.arrayBuffer());
-      await addAttachment(requestId, {
-        stage_key: 'site_visit',
-        file: { originalname: file.name ?? 'site-visit.jpg', mimetype: file.mimetype ?? 'image/jpeg', size: buffer.length, buffer },
-      }, found.user);
+    const link = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
+    if (link && /^https?:\/\//i.test(link)) {
+      await addAttachment(requestId, { stage_key: 'site_visit', url: link }, found.user);
     }
-    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${file ? ' (with photo)' : ''}. Thanks!` });
+    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${link ? ' (with photo link)' : ''}. Thanks!` });
   } catch (err) {
     await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
   }
