@@ -1,7 +1,7 @@
 import { timingSafeEqual, createHmac } from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import { config } from '../config.ts';
-import { handleSlackEvent, handleSlackInteraction } from '../services/slack.ts';
+import { handleSlackInteraction } from '../services/slack.ts';
 
 /** Slack signs the raw body; capture it before urlencoded parsing consumes the stream. */
 function captureRawBody(req: Request, _res: Response, buf: Buffer) {
@@ -33,13 +33,4 @@ slackRoutes.post('/interact', express.urlencoded({ extended: false, verify: capt
   } catch (e) {
     console.error('Slack payload parse failed:', e);
   }
-});
-
-// A plain DM photo (no button click involved) — lets someone just reply with a photo instead of
-// pasting a link, picked up and attached to whichever job card they most recently confirmed.
-slackRoutes.post('/events', express.json({ verify: captureRawBody }), (req, res) => {
-  if (!verifySlack(req)) return res.status(401).send('Invalid signature');
-  if (req.body.type === 'url_verification') return res.status(200).json({ challenge: req.body.challenge });
-  res.status(200).end();
-  handleSlackEvent(req.body).catch((e) => console.error('Slack event handling failed:', e));
 });
