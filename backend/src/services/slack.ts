@@ -214,7 +214,8 @@ async function handleYes(requestId: number, payload: any) {
   if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
-    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}. Thanks!` });
+    await markAwaitingPhoto(requestId, payload.user?.id);
+    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}. Thanks! (you can still DM a photo here in the next 15 min and it'll attach automatically)` });
   } catch (err) {
     await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
   }
@@ -230,10 +231,45 @@ async function handleYesSubmit(payload: any) {
     if (link && /^https?:\/\//i.test(link)) {
       await addAttachment(requestId, { stage_key: 'site_visit', url: link }, found.user);
     }
-    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${link ? ' (with photo link)' : ''}. Thanks!` });
+    await markAwaitingPhoto(requestId, slackUserId);
+    await postToUrl(responseUrl, {
+      replace_original: true,
+      text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${link ? ' (with photo link)' : ''}. Thanks! (you can also just DM a photo here in the next 15 min and it'll attach automatically)`,
+    });
   } catch (err) {
     await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
   }
+}
+
+/** Remembers, for 15 minutes, that a photo DM'd right after this confirmation belongs to this job card. */
+async function markAwaitingPhoto(requestId: number, slackUserId: string | undefined) {
+  if (!slackUserId) return;
+  await col.slackPendingPhotos().updateOne(
+    { _id: slackUserId },
+    { $set: { requestId, expiresAtMs: Date.now() + 15 * 60000 } },
+    { upsert: true },
+  );
+}
+
+/** A photo sent as a plain Slack DM (no button involved) — attach it to whichever job card that
+ *  person most recently confirmed via "Yes, visited" / the modal, if within the last 15 minutes. */
+export async function handleSlackEvent(body: any) {
+  if (!slackEnabled() || body.type !== 'event_callback') return;
+  const event = body.event;
+  if (!event || event.type !== 'message' || event.subtype || event.bot_id || event.channel_type !== 'im') return;
+  const image = (event.files as any[] | undefined)?.find((f) => f.mimetype?.startsWith('image/'));
+  if (!image) return;
+  const pending = await col.slackPendingPhotos().findOne({ _id: event.user, expiresAtMs: { $gt: Date.now() } });
+  if (!pending) return;
+  const found = await siteVisitUser(pending.requestId, event.user);
+  if (!found) return;
+  const res = await fetch(image.url_private, { headers: { Authorization: `Bearer ${config.slackBotToken}` } });
+  const buffer = Buffer.from(await res.arrayBuffer());
+  await addAttachment(pending.requestId, {
+    stage_key: 'site_visit',
+    file: { originalname: image.name ?? 'site-visit.jpg', mimetype: image.mimetype, size: buffer.length, buffer },
+  }, found.user);
+  await slackApi('chat.postMessage', { channel: event.channel, text: `📎 Photo attached to *${found.r.request_no}*. Thanks!` });
 }
 
 async function handleNo(requestId: number, payload: any) {

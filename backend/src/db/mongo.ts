@@ -61,6 +61,9 @@ export const col = {
   slaRules: () => db().collection<any>('sla_rules'),
   escalationRules: () => db().collection<any>('escalation_rules'),
   reasonCodes: () => db().collection<any>('reason_codes'),
+  /** Short-lived markers so a photo sent as a plain Slack DM (no button click) gets attached to
+   *  whichever job card that person just confirmed a site visit on. */
+  slackPendingPhotos: () => db().collection<any>('slack_pending_photos'),
 };
 
 export type MasterTable = 'properties' | 'work_categories' | 'engineers';
