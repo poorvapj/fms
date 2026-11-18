@@ -18,7 +18,7 @@ import { publicFormOptions, submitPublicRequest, trackPublicRequest } from '../s
 import { intakeFormSubmission } from '../services/formIntake.ts';
 import { legacyAllSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
 import { renderLegacyPdf } from '../services/pdfExport.ts';
-import { buildFilter, createRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
+import { buildFilter, createRequest, deleteRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
   addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
@@ -131,6 +131,7 @@ api.patch('/requests/:id', async (req, res) => {
   await updateRequest(id(req), req.body ?? {}, req.user!);
   res.json(await getRequestDetail(id(req), req.user!));
 });
+api.delete('/requests/:id', async (req, res) => { res.json(await deleteRequest(id(req), req.user!)); });
 
 const stageKey = (req: Request) => stageDef(String(req.params.key)).key as StageKey;
 const stageRoutes = { complete: completeStage, skip: skipStage, decision: decideStage } as const;

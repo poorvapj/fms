@@ -11,6 +11,7 @@ const TYPE_LABEL: Record<string, string> = {
   user_created: 'User created',
   user_updated: 'User updated',
   password_changed: 'Password changed',
+  request_deleted: 'Job card deleted',
 };
 
 export function AuditLog() {

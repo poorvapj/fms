@@ -10,6 +10,7 @@ import { storeFile, removeFiles } from './attachments.ts';
 import { eventDoc, logEvent } from './events.ts';
 import { masterNames } from './masters.ts';
 import { notifyPublicSubmission, notifySiteVisitIfNeeded } from './slack.ts';
+import { logAudit } from './audit.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 import { newStages, refreshState, saveRequest, type RequestDoc } from './workflowEngine.ts';
 
@@ -137,6 +138,24 @@ export async function loadRequest(id: number): Promise<RequestDoc> {
   const r = await col.requests().findOne({ _id: id });
   if (!r) throw notFound('Job card');
   return r as RequestDoc;
+}
+
+/** Permanently removes a job card and everything filed under it (attachments incl. their stored
+ *  bytes, events, legacy import row). Administrators only — this is not a status change, there's
+ *  no undo. */
+export async function deleteRequest(requestId: number, user: AuthUser) {
+  if (user.role !== 'admin') throw forbidden();
+  const r = await loadRequest(requestId);
+  const attachments = await col.attachments().find({ request_id: requestId }, { projection: { file_id: 1 } }).toArray();
+  await removeFiles(attachments.map((a) => a.file_id));
+  await Promise.all([
+    col.attachments().deleteMany({ request_id: requestId }),
+    col.events().deleteMany({ request_id: requestId }),
+    col.legacyRows().deleteOne({ request_id: requestId }),
+    col.requests().deleteOne({ _id: requestId }),
+  ]);
+  logAudit('request_deleted', `${user.name} deleted job card ${r.request_no}`, { user, data: { request_id: requestId, request_no: r.request_no } }).catch(() => {});
+  return { request_no: r.request_no };
 }
 
 export function canView(user: AuthUser, r: Doc): boolean {

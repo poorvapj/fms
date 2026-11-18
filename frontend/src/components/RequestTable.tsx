@@ -1,4 +1,8 @@
+import type { MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Icon } from './Icon';
+import { api, errorText } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { cap, fmtDateTime } from '../lib/format';
 import type { RequestRow } from '../lib/types';
 import { Empty, OverdueBadge, StatusBadge } from './ui';
@@ -64,8 +68,20 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
   rows: RequestRow[]; sort?: SortState; onSort?: (s: SortState) => void; emptyText?: string; compact?: boolean; onUpdate?: () => void;
 }) {
   const nav = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   if (!rows.length) return <Empty title={emptyText} />;
   const closed = (r: RequestRow) => r.status === 'closed' || r.status === 'cancelled';
+  const remove = async (r: RequestRow, e: MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Permanently delete ${r.request_no}? This cannot be undone.`)) return;
+    try {
+      await api.del(`/requests/${r.id}`);
+      onUpdate?.();
+    } catch (err) {
+      window.alert(errorText(err));
+    }
+  };
   return (
     <div className="table-wrap">
       <table className={`table${compact ? ' compact' : ''}`}>
@@ -80,6 +96,7 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
             <th>Next Action</th>
             <Th label="Due" k="planned" sort={sort} onSort={onSort} />
             {!compact && <th>Remarks</th>}
+            {isAdmin && <th />}
           </tr>
         </thead>
         <tbody>
@@ -105,6 +122,9 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
                   <td className="small" style={tone ? { color: tone.text, fontWeight: 600 } : undefined}>
                     {displayRemark(r) || <span className="muted">—</span>}
                   </td>
+                )}
+                {isAdmin && (
+                  <td className="right"><button className="btn sm ghost danger" title="Delete job card" onClick={(e) => remove(r, e)}><Icon name="trash" size={13} /></button></td>
                 )}
               </tr>
             );
