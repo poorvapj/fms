@@ -31,6 +31,20 @@ async function postToUrl(url: string, body: Record<string, unknown>) {
   await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 }
 
+/** Finds the Slack user whose workspace account uses this email — null if there's no match
+ *  (e.g. an outside vendor/tenant with no Slack account), which callers should treat as "skip". */
+async function lookupSlackUserByEmail(email: string): Promise<string | null> {
+  const res = await fetch(`${SLACK_API}/users.lookupByEmail?email=${encodeURIComponent(email)}`, {
+    headers: { Authorization: `Bearer ${config.slackBotToken}` },
+  });
+  const json = await res.json();
+  if (!json.ok) {
+    if (json.error !== 'users_not_found') console.error('Slack users.lookupByEmail failed:', json.error);
+    return null;
+  }
+  return json.user?.id ?? null;
+}
+
 /** Replaces the original Yes/No message with the final result (no more buttons, so it can't be
  *  clicked again) and never expires, unlike `response_url`. Falls back to a fresh DM, then to
  *  `response_url`, if we don't have the original message's channel/ts (e.g. very old flows). */
@@ -170,6 +184,34 @@ export async function notifySiteVisitIfNeeded(r: RequestDoc) {
   await logEvent(r._id, 'slack_notified', `Slack notification sent to ${recipients.map((e) => e.name).join(', ')} for Site Visit`, { stageKey: 'site_visit', userName: 'Slack' });
 }
 
+/** Job card just closed — DM the requester (matched by email to a Slack account in this
+ *  workspace) asking them to confirm the work is actually done, once per job card. If their
+ *  email doesn't match anyone in the workspace (e.g. an outside vendor/tenant), skip quietly. */
+export async function notifyRequesterOnCloseIfNeeded(r: RequestDoc) {
+  if (!slackEnabled() || r.status !== 'closed' || !r.requester_email) return;
+  const already = await col.events().findOne({ request_id: r._id, type: 'slack_notified', stage_key: 'closure_confirm' });
+  if (already) return;
+  const slackUserId = await lookupSlackUserByEmail(r.requester_email);
+  if (!slackUserId) return;
+
+  const text = `*Your job card has been closed*\n*Job:* ${r.request_no}\n*Work:* ${r.description}\n\nIs the work actually done?`;
+  await slackApi('chat.postMessage', {
+    channel: slackUserId,
+    text,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text } },
+      {
+        type: 'actions',
+        elements: [
+          { type: 'button', text: { type: 'plain_text', text: '✅ Yes, done' }, style: 'primary', action_id: 'closure_yes', value: String(r._id) },
+          { type: 'button', text: { type: 'plain_text', text: '❌ No, not done' }, style: 'danger', action_id: 'closure_no', value: String(r._id) },
+        ],
+      },
+    ],
+  });
+  await logEvent(r._id, 'slack_notified', `Slack closure-confirmation sent to requester (${r.requester_email})`, { stageKey: 'closure_confirm', userName: 'Slack' });
+}
+
 /** Body of a Slack interactivity POST (verified caller): block_actions or view_submission. */
 export async function handleSlackInteraction(payload: any) {
   if (payload.type === 'block_actions') {
@@ -178,12 +220,20 @@ export async function handleSlackInteraction(payload: any) {
     if (!requestId) return;
     if (action.action_id === 'site_visit_yes') return handleYes(requestId, payload);
     if (action.action_id === 'site_visit_no') return handleNo(requestId, payload);
+    if (action.action_id === 'closure_yes') return handleClosureYes(requestId, payload);
+    if (action.action_id === 'closure_no') return handleClosureNo(requestId, payload);
   }
   if (payload.type === 'view_submission' && payload.view?.callback_id === 'site_visit_no_reason') {
     return handleNoSubmit(payload);
   }
   if (payload.type === 'view_submission' && payload.view?.callback_id === 'site_visit_yes_confirm') {
     return handleYesSubmit(payload);
+  }
+  if (payload.type === 'view_submission' && payload.view?.callback_id === 'closure_no_reason') {
+    return handleClosureNoSubmit(payload);
+  }
+  if (payload.type === 'view_submission' && payload.view?.callback_id === 'closure_yes_confirm') {
+    return handleClosureYesSubmit(payload);
   }
 }
 
@@ -291,5 +341,85 @@ async function handleNoSubmit(payload: any) {
     await confirmToUser(target, `❌ Marked *Site Visit* not done for ${r.request_no} by ${eng?.name ?? 'Slack'}.\nReason: ${reason}`);
   } catch (err) {
     await confirmToUser(target, `Could not update: ${(err as Error).message}`);
+  }
+}
+
+/** "Yes, done" (requester confirming a closed job card) opens a small modal offering an optional
+ *  proof photo, then posts the result into the job-card channel — never changes the job card's
+ *  own status, this is just the requester's feedback on record. */
+async function handleClosureYes(requestId: number, payload: any) {
+  await slackApi('views.open', {
+    trigger_id: payload.trigger_id,
+    view: {
+      type: 'modal',
+      callback_id: 'closure_yes_confirm',
+      private_metadata: JSON.stringify({ requestId, responseUrl: payload.response_url, slackUserId: payload.user?.id, channel: payload.channel?.id, ts: payload.message?.ts }),
+      title: { type: 'plain_text', text: 'Work done' },
+      submit: { type: 'plain_text', text: 'Confirm' },
+      close: { type: 'plain_text', text: 'Cancel' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'photo_block',
+          optional: true,
+          label: { type: 'plain_text', text: 'Photo of completed work (optional — paste a Google Drive / image URL)' },
+          element: { type: 'plain_text_input', action_id: 'photo' },
+        },
+      ],
+    },
+  });
+}
+
+async function handleClosureYesSubmit(payload: any) {
+  const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
+  const target = { channel, ts, slackUserId, responseUrl };
+  try {
+    const r = await loadRequest(requestId);
+    const link = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
+    if (link && /^https?:\/\//i.test(link)) {
+      await addAttachment(requestId, { stage_key: 'closed', url: link }, { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+    }
+    await logEvent(requestId, 'comment', `Requester confirmed work done${link ? ' (with photo)' : ''}`, { stageKey: 'closed', userName: r.requester_name ?? 'Requester' });
+    await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: `✅ *Work done* confirmed by requester for ${r.request_no}${link ? ` (photo: ${link})` : ''}.` });
+    await confirmToUser(target, `✅ Thanks! Marked as done for ${r.request_no}.`);
+  } catch (err) {
+    await confirmToUser(target, `Could not record this: ${(err as Error).message}`);
+  }
+}
+
+/** "No, not done" — same shape as "Yes" but asks for a reason and posts a not-done flag instead. */
+async function handleClosureNo(requestId: number, payload: any) {
+  await slackApi('views.open', {
+    trigger_id: payload.trigger_id,
+    view: {
+      type: 'modal',
+      callback_id: 'closure_no_reason',
+      private_metadata: JSON.stringify({ requestId, responseUrl: payload.response_url, slackUserId: payload.user?.id, channel: payload.channel?.id, ts: payload.message?.ts }),
+      title: { type: 'plain_text', text: 'Work not done' },
+      submit: { type: 'plain_text', text: 'Send' },
+      close: { type: 'plain_text', text: 'Cancel' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'reason_block',
+          label: { type: 'plain_text', text: "What's still pending?" },
+          element: { type: 'plain_text_input', action_id: 'reason', multiline: true },
+        },
+      ],
+    },
+  });
+}
+
+async function handleClosureNoSubmit(payload: any) {
+  const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
+  const target = { channel, ts, slackUserId, responseUrl };
+  const reason = payload.view.state.values.reason_block.reason.value as string;
+  try {
+    const r = await loadRequest(requestId);
+    await logEvent(requestId, 'comment', `Requester says work not done — ${reason}`, { stageKey: 'closed', userName: r.requester_name ?? 'Requester' });
+    await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: `❌ *Work NOT done* — requester on ${r.request_no} says:\n${reason}` });
+    await confirmToUser(target, `Got it — marked as not done for ${r.request_no}. The team will follow up.`);
+  } catch (err) {
+    await confirmToUser(target, `Could not record this: ${(err as Error).message}`);
   }
 }

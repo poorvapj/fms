@@ -8,7 +8,7 @@ import { logEvent } from './events.ts';
 import { assertCanView, loadRequest } from './requests.ts';
 import { stageDef } from './stageDefs.ts';
 import { refreshState, saveRequest, stageOf, type RequestDoc, type StageDoc } from './workflowEngine.ts';
-import { notifySiteVisitIfNeeded } from './slack.ts';
+import { notifyRequesterOnCloseIfNeeded, notifySiteVisitIfNeeded } from './slack.ts';
 
 /** Whether a user may act on a stage of a job card (role + engineer binding). */
 export function canActOnStage(user: AuthUser, def: StageDefinition, r: Doc, stage: StageDoc | null): boolean {
@@ -95,6 +95,7 @@ export async function completeStage(requestId: number, key: StageKey, body: any,
   refreshState(r);
   await saveRequest(r);
   await notifySiteVisitIfNeeded(r).catch((e) => console.error('Slack notify failed:', e));
+  await notifyRequesterOnCloseIfNeeded(r).catch((e) => console.error('Closure Slack notify failed:', e));
   const verb = def.decision ? 'approved' : 'completed';
   await logEvent(requestId, 'stage_completed', `${def.name} ${verb}${extra.length ? ` — ${extra.join(', ')}` : ''}${comments ? `: ${comments}` : ''}`, {
     stageKey: key, user, data: { actual_at: actual, planned_at: stage.planned_at },
@@ -255,6 +256,7 @@ export async function fastCloseRequest(requestId: number, body: any, user: AuthU
   refreshState(r);
   await saveRequest(r);
   await logEvent(requestId, 'stage_completed', `Closed early (${category}): ${reason}`, { stageKey: 'closed', user });
+  await notifyRequesterOnCloseIfNeeded(r).catch((e) => console.error('Closure Slack notify failed:', e));
 }
 
 /** Correct the remark left when a job card was closed, without reopening it or touching dates. */
