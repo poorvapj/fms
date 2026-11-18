@@ -62,6 +62,7 @@ export const col = {
   escalationRules: () => db().collection<any>('escalation_rules'),
   reasonCodes: () => db().collection<any>('reason_codes'),
   auditLog: () => db().collection<any>('audit_log'),
+  slackPendingPhotos: () => db().collection<any>('slack_pending_photos'),
 };
 
 export type MasterTable = 'properties' | 'work_categories' | 'engineers';
@@ -114,6 +115,9 @@ async function ensureIndexes(d: Db) {
     d.collection('holidays').createIndex({ date: 1, property_id: 1 }),
     d.collection('reason_codes').createIndex({ kind: 1, code: 1 }, { unique: true }),
     d.collection('audit_log').createIndex({ created_at: -1 }),
+    // expires_at is a local wall-clock string (like every other date in this app), not a BSON
+    // Date, so Mongo's TTL mechanism can't expire it automatically — callers filter it manually.
+    d.collection('slack_pending_photos').createIndex({ slack_user_id: 1 }),
   ]);
 }
 

@@ -7,7 +7,7 @@ import { masterNames } from './masters.ts';
 import { completeStage } from './stages.ts';
 import { logEvent } from './events.ts';
 import { loadRequest } from './requests.ts';
-import { nowLocal } from '../utils/dates.ts';
+import { formatMs, nowLocal, toMs } from '../utils/dates.ts';
 import { refreshState, saveRequest, stageOf, type RequestDoc } from './workflowEngine.ts';
 
 const SLACK_API = 'https://slack.com/api';
@@ -212,6 +212,39 @@ export async function notifyRequesterOnCloseIfNeeded(r: RequestDoc) {
   await logEvent(r._id, 'slack_notified', `Slack closure-confirmation sent to requester (${r.requester_email})`, { stageKey: 'closure_confirm', userName: 'Slack' });
 }
 
+/** Remembers "if this Slack user DMs a photo in the next 15 min, attach it here" — set right
+ *  after a Yes click, consumed by handleSlackEvent when a message.im with a file arrives. */
+async function markAwaitingPhoto(slackUserId: string, requestId: number, stageKey: string, user: AuthUser) {
+  await col.slackPendingPhotos().updateOne(
+    { slack_user_id: slackUserId },
+    { $set: { slack_user_id: slackUserId, request_id: requestId, stage_key: stageKey, user, expires_at: formatMs(toMs(nowLocal())! + 15 * 60000) } },
+    { upsert: true },
+  );
+}
+
+/** Slack Events API: `message.im` (a DM sent to the bot) with an attached file, matched against
+ *  a pending "DM a photo" window from a recent Yes click. Ignored if there's no such window, or
+ *  it's expired — the paste-a-link option in the modal still works either way. */
+export async function handleSlackEvent(event: any) {
+  if (event?.type !== 'message' || event.channel_type !== 'im' || event.bot_id || !event.files?.length) return;
+  const pending = await col.slackPendingPhotos().findOne({ slack_user_id: event.user });
+  if (!pending) return;
+  await col.slackPendingPhotos().deleteOne({ slack_user_id: event.user });
+  if (pending.expires_at < nowLocal()) return;
+
+  const file = event.files[0];
+  const res = await fetch(file.url_private_download ?? file.url_private, { headers: { Authorization: `Bearer ${config.slackBotToken}` } });
+  if (!res.ok) return;
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const user: AuthUser = pending.user;
+  try {
+    await addAttachment(pending.request_id, { stage_key: pending.stage_key, file: { originalname: file.name ?? 'photo.jpg', mimetype: file.mimetype ?? 'image/jpeg', size: buffer.length, buffer }, source: 'comment' }, user);
+    await slackApi('chat.postMessage', { channel: event.channel, text: '📎 Photo attached. Thanks!' });
+  } catch (err) {
+    console.error('Failed to attach Slack-DM photo:', err);
+  }
+}
+
 /** Body of a Slack interactivity POST (verified caller): block_actions or view_submission. */
 export async function handleSlackInteraction(payload: any) {
   if (payload.type === 'block_actions') {
@@ -267,13 +300,20 @@ async function handleYes(requestId: number, payload: any) {
           type: 'input',
           block_id: 'photo_block',
           optional: true,
-          label: { type: 'plain_text', text: 'Photo link (optional, as proof — paste a Google Drive / image URL)' },
+          label: { type: 'plain_text', text: 'Photo link (optional — paste a Google Drive / image URL, or just DM the photo here in the next 15 min)' },
           element: { type: 'plain_text_input', action_id: 'photo' },
         },
       ],
     },
   });
-  if (opened.ok) return;
+  if (opened.ok) {
+    const slackUserId: string | undefined = payload.user?.id;
+    if (slackUserId) {
+      const found = await siteVisitUser(requestId, slackUserId);
+      if (found) await markAwaitingPhoto(slackUserId, requestId, 'site_visit', found.user);
+    }
+    return;
+  }
   console.error('views.open failed, falling back to direct complete:', opened.error);
   const slackUserId: string | undefined = payload.user?.id;
   const target = { channel: payload.channel?.id, ts: payload.message?.ts, slackUserId, responseUrl: payload.response_url };
@@ -348,7 +388,7 @@ async function handleNoSubmit(payload: any) {
  *  proof photo, then posts the result into the job-card channel — never changes the job card's
  *  own status, this is just the requester's feedback on record. */
 async function handleClosureYes(requestId: number, payload: any) {
-  await slackApi('views.open', {
+  const opened = await slackApi('views.open', {
     trigger_id: payload.trigger_id,
     view: {
       type: 'modal',
@@ -362,12 +402,17 @@ async function handleClosureYes(requestId: number, payload: any) {
           type: 'input',
           block_id: 'photo_block',
           optional: true,
-          label: { type: 'plain_text', text: 'Photo of completed work (optional — paste a Google Drive / image URL)' },
+          label: { type: 'plain_text', text: 'Photo of completed work (optional — paste a Google Drive / image URL, or just DM the photo here in the next 15 min)' },
           element: { type: 'plain_text_input', action_id: 'photo' },
         },
       ],
     },
   });
+  const slackUserId: string | undefined = payload.user?.id;
+  if (opened.ok && slackUserId) {
+    const r = await loadRequest(requestId).catch(() => null);
+    if (r) await markAwaitingPhoto(slackUserId, requestId, 'closed', { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+  }
 }
 
 async function handleClosureYesSubmit(payload: any) {

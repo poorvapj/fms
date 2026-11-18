@@ -1,7 +1,7 @@
 import { timingSafeEqual, createHmac } from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import { config } from '../config.ts';
-import { handleSlackInteraction } from '../services/slack.ts';
+import { handleSlackEvent, handleSlackInteraction } from '../services/slack.ts';
 
 /** Slack signs the raw body; capture it before urlencoded parsing consumes the stream. */
 function captureRawBody(req: Request, _res: Response, buf: Buffer) {
@@ -32,5 +32,14 @@ slackRoutes.post('/interact', express.urlencoded({ extended: false, verify: capt
     handleSlackInteraction(JSON.parse(req.body.payload)).catch((e) => console.error('Slack interaction failed:', e));
   } catch (e) {
     console.error('Slack payload parse failed:', e);
+  }
+});
+
+slackRoutes.post('/events', express.json({ verify: captureRawBody }), (req, res) => {
+  if (!verifySlack(req)) return res.status(401).send('Invalid signature');
+  if (req.body.type === 'url_verification') return res.json({ challenge: req.body.challenge });
+  res.status(200).end();
+  if (req.body.type === 'event_callback') {
+    handleSlackEvent(req.body.event).catch((e) => console.error('Slack event failed:', e));
   }
 });
