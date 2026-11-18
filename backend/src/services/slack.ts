@@ -240,9 +240,9 @@ async function handleYes(requestId: number, payload: any) {
 async function handleYesSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
   const target = { channel, ts, slackUserId, responseUrl };
-  const found = await siteVisitUser(requestId, slackUserId);
-  if (!found) return confirmToUser(target, 'This job card could not be updated.');
   try {
+    const found = await siteVisitUser(requestId, slackUserId);
+    if (!found) return confirmToUser(target, 'This job card could not be updated.');
     await completeStage(requestId, 'site_visit', {}, found.user);
     const link = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
     if (link && /^https?:\/\//i.test(link)) {
@@ -278,13 +278,18 @@ async function handleNo(requestId: number, payload: any) {
 
 async function handleNoSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
+  const target = { channel, ts, slackUserId, responseUrl };
   const reason = payload.view.state.values.reason_block.reason.value as string;
-  const r = await loadRequest(requestId);
-  const eng = slackUserId ? await col.engineers().findOne({ slack_user_id: slackUserId }) : null;
-  const stage = stageOf(r, 'site_visit');
-  Object.assign(stage, { attention: true, comments: `Not visited (Slack): ${reason}`, updated_at: nowLocal() });
-  refreshState(r);
-  await saveRequest(r);
-  await logEvent(requestId, 'comment', `Site visit not done (via Slack) — ${reason}`, { stageKey: 'site_visit', userName: eng?.name ?? 'Slack' });
-  await confirmToUser({ channel, ts, slackUserId, responseUrl }, `❌ Marked *Site Visit* not done for ${r.request_no} by ${eng?.name ?? 'Slack'}.\nReason: ${reason}`);
+  try {
+    const r = await loadRequest(requestId);
+    const eng = slackUserId ? await col.engineers().findOne({ slack_user_id: slackUserId }) : null;
+    const stage = stageOf(r, 'site_visit');
+    Object.assign(stage, { attention: true, comments: `Not visited (Slack): ${reason}`, updated_at: nowLocal() });
+    refreshState(r);
+    await saveRequest(r);
+    await logEvent(requestId, 'comment', `Site visit not done (via Slack) — ${reason}`, { stageKey: 'site_visit', userName: eng?.name ?? 'Slack' });
+    await confirmToUser(target, `❌ Marked *Site Visit* not done for ${r.request_no} by ${eng?.name ?? 'Slack'}.\nReason: ${reason}`);
+  } catch (err) {
+    await confirmToUser(target, `Could not update: ${(err as Error).message}`);
+  }
 }
