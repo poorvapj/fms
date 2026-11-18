@@ -27,16 +27,17 @@ export type Permission =
   | 'users.manage'
   | 'import.run'
   | 'reports.view'
-  | 'dashboard.view';
+  | 'dashboard.view'
+  | 'audit.view';
 
 const ALL: Permission[] = [
   'request.view_all', 'request.create', 'request.edit', 'request.manage', 'request.comment', 'stage.update',
-  'stage.edit_history', 'approvals.view', 'masters.manage', 'users.manage', 'import.run', 'reports.view', 'dashboard.view',
+  'stage.edit_history', 'approvals.view', 'masters.manage', 'users.manage', 'import.run', 'reports.view', 'dashboard.view', 'audit.view',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL,
-  coordinator: ALL.filter((p) => p !== 'users.manage' && p !== 'stage.edit_history'),
+  coordinator: ALL.filter((p) => p !== 'users.manage' && p !== 'stage.edit_history' && p !== 'audit.view'),
   project_head: ['request.view_all', 'request.create', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],
   approver: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],
   store: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],

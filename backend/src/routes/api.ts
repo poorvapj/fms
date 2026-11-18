@@ -24,6 +24,7 @@ import {
   addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
+import { listAuditLog } from '../services/audit.ts';
 import { badRequest, notFound, toCsv } from '../utils/http.ts';
 import { evidenceUpload, importUpload } from './uploads.ts';
 
@@ -217,8 +218,10 @@ api.post('/masters/:kind/:id/merge', requirePermission('masters.manage'), async 
 
 // ---------------------------------------------------------------- users
 api.get('/users', requirePermission('users.manage'), async (_req, res) => { res.json(await listUsers()); });
-api.post('/users', requirePermission('users.manage'), async (req, res) => { res.status(201).json(await createUser(req.body ?? {})); });
+api.post('/users', requirePermission('users.manage'), async (req, res) => { res.status(201).json(await createUser(req.body ?? {}, req.user!)); });
 api.patch('/users/:id', requirePermission('users.manage'), async (req, res) => { await updateUser(id(req), req.body ?? {}, req.user!); res.json({ ok: true }); });
+
+api.get('/audit-log', requirePermission('audit.view'), async (_req, res) => { res.json(await listAuditLog()); });
 
 // ---------------------------------------------------------------- reports
 api.get('/reports/:key', requirePermission('reports.view'), async (req, res) => {

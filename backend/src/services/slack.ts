@@ -31,6 +31,15 @@ async function postToUrl(url: string, body: Record<string, unknown>) {
   await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 }
 
+/** `response_url` expires ~30 min after the original message (and can only be used a handful of
+ *  times), so it can silently fail if the modal is filled in slowly. Posting a fresh DM via
+ *  chat.postMessage to the same channel always works regardless of how much time has passed —
+ *  prefer it over response_url, falling back to response_url only if we have no user id to DM. */
+async function confirmToUser(slackUserId: string | undefined, responseUrl: string, text: string) {
+  if (slackUserId) await slackApi('chat.postMessage', { channel: slackUserId, text });
+  else await postToUrl(responseUrl, { replace_original: true, text });
+}
+
 const FORM_INTAKE_CHANNEL = 'C0AVD30QM33';
 
 /** "2026-11-13T18:25:31" -> "11/13/2026 18:25:31" (mirrors the Google Form's own Sheet timestamp format). */
@@ -210,33 +219,31 @@ async function handleYes(requestId: number, payload: any) {
   });
   if (opened.ok) return;
   console.error('views.open failed, falling back to direct complete:', opened.error);
-  const found = await siteVisitUser(requestId, payload.user?.id);
+  const slackUserId: string | undefined = payload.user?.id;
+  const found = await siteVisitUser(requestId, slackUserId);
   const responseUrl = payload.response_url;
-  if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
+  if (!found) return confirmToUser(slackUserId, responseUrl, 'This job card could not be updated.');
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
-    await postToUrl(responseUrl, { replace_original: true, text: `✅ Marked *Site Visit* as done for ${found.r.request_no}. Thanks!` });
+    await confirmToUser(slackUserId, responseUrl, `✅ Marked *Site Visit* as done for ${found.r.request_no} by ${found.user.name}. Thanks!`);
   } catch (err) {
-    await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
+    await confirmToUser(slackUserId, responseUrl, `Could not update: ${(err as Error).message}`);
   }
 }
 
 async function handleYesSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId } = JSON.parse(payload.view.private_metadata);
   const found = await siteVisitUser(requestId, slackUserId);
-  if (!found) return postToUrl(responseUrl, { replace_original: true, text: 'This job card could not be updated.' });
+  if (!found) return confirmToUser(slackUserId, responseUrl, 'This job card could not be updated.');
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
     const link = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
     if (link && /^https?:\/\//i.test(link)) {
       await addAttachment(requestId, { stage_key: 'site_visit', url: link }, found.user);
     }
-    await postToUrl(responseUrl, {
-      replace_original: true,
-      text: `✅ Marked *Site Visit* as done for ${found.r.request_no}${link ? ' (with photo link)' : ''}. Thanks!`,
-    });
+    await confirmToUser(slackUserId, responseUrl, `✅ Marked *Site Visit* as done for ${found.r.request_no} by ${found.user.name}${link ? ' (with photo link)' : ''}. Thanks!`);
   } catch (err) {
-    await postToUrl(responseUrl, { replace_original: true, text: `Could not update: ${(err as Error).message}` });
+    await confirmToUser(slackUserId, responseUrl, `Could not update: ${(err as Error).message}`);
   }
 }
 
@@ -272,5 +279,5 @@ async function handleNoSubmit(payload: any) {
   refreshState(r);
   await saveRequest(r);
   await logEvent(requestId, 'comment', `Site visit not done (via Slack) — ${reason}`, { stageKey: 'site_visit', userName: eng?.name ?? 'Slack' });
-  await postToUrl(responseUrl, { replace_original: true, text: `❌ Marked *Site Visit* not done for ${r.request_no}.\nReason: ${reason}` });
+  await confirmToUser(slackUserId, responseUrl, `❌ Marked *Site Visit* not done for ${r.request_no} by ${eng?.name ?? 'Slack'}.\nReason: ${reason}`);
 }

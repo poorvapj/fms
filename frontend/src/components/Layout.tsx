@@ -21,6 +21,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { to: '/masters', label: 'Masters', icon: 'building', perm: 'masters.manage', adminOnly: true },
       { to: '/users', label: 'Users', icon: 'users', perm: 'users.manage' },
+      { to: '/audit-log', label: 'Audit Log', icon: 'list', perm: 'audit.view', adminOnly: true },
     ],
   },
 ];

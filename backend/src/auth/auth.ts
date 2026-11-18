@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
 import { can, ROLE_PERMISSIONS, type Permission, type Role } from '../domain/permissions.ts';
+import { logAudit } from '../services/audit.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { HttpError, forbidden } from '../utils/http.ts';
 
@@ -55,11 +56,13 @@ export async function login(username: string, password: string, ip: string, res:
   const ok = row && row.active && bcrypt.compareSync(password, row.password_hash);
   if (!ok) {
     failures.set(key, { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + 15 * 60000 });
+    logAudit('login_failed', `Failed login attempt for "${username}"`, { userName: username, data: { ip } }).catch(() => {});
     throw new HttpError(401, 'Invalid username or password');
   }
   failures.delete(key);
   // Not needed to complete sign-in — don't make the user wait on it.
   col.users().updateOne({ _id: row._id }, { $set: { last_login_at: nowLocal() } }).catch(() => {});
+  logAudit('login', `${row.name} signed in`, { user: { id: row._id, name: row.name } as AuthUser, data: { ip } }).catch(() => {});
   const token = jwt.sign({ sub: String(row._id) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
   res.cookie(COOKIE, token, {
     httpOnly: true,

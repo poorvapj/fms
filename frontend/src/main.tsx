@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { Loading } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
 import { Account } from './pages/Account';
+import { AuditLog } from './pages/AuditLog';
 import { Dashboard } from './pages/Dashboard';
 import { ImportBatch, ImportHistory, ImportWizard } from './pages/Import';
 import { JobCardPrint } from './pages/JobCardPrint';
@@ -59,6 +60,7 @@ function App() {
         <Route path="requests/:id" element={<LegacyRedirect />} />
         <Route path="coordinator" element={<Guard perm="request.manage"><ProcessCoordinator /></Guard>} />
         <Route path="users" element={<Guard perm="users.manage"><UsersPage /></Guard>} />
+        <Route path="audit-log" element={<Guard perm="audit.view" adminOnly><AuditLog /></Guard>} />
         <Route path="my-jobs" element={<MyJobs />} />
         <Route path="reports" element={<Guard perm="reports.view"><Reports /></Guard>} />
         <Route path="reports/:key" element={<Guard perm="reports.view"><Reports /></Guard>} />

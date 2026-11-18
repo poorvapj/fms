@@ -61,6 +61,7 @@ export const col = {
   slaRules: () => db().collection<any>('sla_rules'),
   escalationRules: () => db().collection<any>('escalation_rules'),
   reasonCodes: () => db().collection<any>('reason_codes'),
+  auditLog: () => db().collection<any>('audit_log'),
 };
 
 export type MasterTable = 'properties' | 'work_categories' | 'engineers';
@@ -112,6 +113,7 @@ async function ensureIndexes(d: Db) {
     d.collection('import_uploads').createIndex({ created_at_date: 1 }, { expireAfterSeconds: 86400 }),
     d.collection('holidays').createIndex({ date: 1, property_id: 1 }),
     d.collection('reason_codes').createIndex({ kind: 1, code: 1 }, { unique: true }),
+    d.collection('audit_log').createIndex({ created_at: -1 }),
   ]);
 }
 

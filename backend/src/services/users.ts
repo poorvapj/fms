@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { hashPassword, validatePassword, type AuthUser } from '../auth/auth.ts';
 import { col, isDuplicateKey, nextId } from '../db/mongo.ts';
 import { ROLES } from '../domain/permissions.ts';
+import { logAudit } from './audit.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { badRequest, bool, conflict, int, notFound, oneOf, requiredStr, str } from '../utils/http.ts';
 
@@ -35,7 +36,7 @@ async function checkEmail(raw: unknown, userId?: number): Promise<string | null>
   return email;
 }
 
-export async function createUser(body: any) {
+export async function createUser(body: any, actor: AuthUser) {
   const username = requiredStr(body.username, 'Username', 60).toLowerCase();
   if (!/^[a-z0-9._-]{3,60}$/.test(username)) throw badRequest('Username may contain letters, numbers, dot, dash and underscore (min 3)');
   if (await col.users().findOne({ username }, { collation: CI })) throw conflict('Username already exists');
@@ -55,6 +56,7 @@ export async function createUser(body: any) {
     if (isDuplicateKey(err)) throw conflict('Username or email already exists');
     throw err;
   }
+  logAudit('user_created', `${actor.name} created user "${username}" (${role})`, { user: actor, data: { target_user_id: id, target_username: username, role } }).catch(() => {});
   return { id };
 }
 
@@ -77,6 +79,7 @@ export async function updateUser(id: number, body: any, actor: AuthUser) {
   };
   if (body.password) Object.assign(set, { password_hash: hashPassword(validatePassword(body.password)), must_change_password: 1 });
   await col.users().updateOne({ _id: id }, { $set: set });
+  logAudit('user_updated', `${actor.name} updated user "${u.username}"`, { user: actor, data: { target_user_id: id, target_username: u.username, changes: Object.keys(body) } }).catch(() => {});
 }
 
 export async function changeOwnPassword(user: AuthUser, current: unknown, next: unknown) {
@@ -85,4 +88,5 @@ export async function changeOwnPassword(user: AuthUser, current: unknown, next: 
   const pw = validatePassword(next);
   if (pw === current) throw badRequest('New password must be different');
   await col.users().updateOne({ _id: user.id }, { $set: { password_hash: hashPassword(pw), must_change_password: 0, updated_at: nowLocal() } });
+  logAudit('password_changed', `${user.name} changed their own password`, { user }).catch(() => {});
 }
