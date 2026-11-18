@@ -240,6 +240,11 @@ export async function handleSlackEvent(event: any) {
   try {
     await addAttachment(pending.request_id, { stage_key: pending.stage_key, file: { originalname: file.name ?? 'photo.jpg', mimetype: file.mimetype ?? 'image/jpeg', size: buffer.length, buffer }, source: 'comment' }, user);
     await slackApi('chat.postMessage', { channel: event.channel, text: '📎 Photo attached. Thanks!' });
+    if (pending.stage_key === 'closed') {
+      const r = await loadRequest(pending.request_id);
+      await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: `✅ *Work done* confirmed by requester\n${closureSummaryLines(r)}` });
+      await uploadImageBytesToSlack(buffer, FORM_INTAKE_CHANNEL, r.request_no);
+    }
   } catch (err) {
     console.error('Failed to attach Slack-DM photo:', err);
   }
@@ -415,17 +420,35 @@ async function handleClosureYes(requestId: number, payload: any) {
   }
 }
 
+/** Job: JC-xxx / Work: description / Raised on: .. / Completed on: .. — shared by the group-channel
+ *  posts for both "done" and "not done", so they carry the same context either way. */
+function closureSummaryLines(r: RequestDoc): string {
+  return [`*Job:* ${r.request_no}`, `*Work:* ${r.description}`, `*Raised on:* ${fmtUs(r.requested_at)}`, `*Completed on:* ${fmtUs(r.closed_at)}`].join('\n');
+}
+
 async function handleClosureYesSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
   const target = { channel, ts, slackUserId, responseUrl };
   try {
     const r = await loadRequest(requestId);
-    const link = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
-    if (link && /^https?:\/\//i.test(link)) {
+    const raw = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
+    const link = raw && /^https?:\/\//i.test(raw) ? raw : null;
+    const note = raw && !link ? raw : null; // they typed something, but it wasn't a link — keep it as a note instead of mislabelling it a photo
+    if (link) {
       await addAttachment(requestId, { stage_key: 'closed', url: link }, { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
     }
-    await logEvent(requestId, 'comment', `Requester confirmed work done${link ? ' (with photo)' : ''}`, { stageKey: 'closed', userName: r.requester_name ?? 'Requester' });
-    await slackApi('chat.postMessage', { channel: FORM_INTAKE_CHANNEL, text: `✅ *Work done* confirmed by requester for ${r.request_no}${link ? ` (photo: ${link})` : ''}.` });
+    await logEvent(requestId, 'comment', `Requester confirmed work done${link ? ' (with photo)' : note ? ` — ${note}` : ''}`, { stageKey: 'closed', userName: r.requester_name ?? 'Requester' });
+    const lines = [`✅ *Work done* confirmed by requester`, closureSummaryLines(r)];
+    if (note) lines.push(`*Note:* ${note}`);
+    await slackApi('chat.postMessage', {
+      channel: FORM_INTAKE_CHANNEL,
+      text: lines.join('\n'),
+      unfurl_links: true,
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } },
+        ...(link ? [{ type: 'image', image_url: link, alt_text: 'Photo of completed work' }] : []),
+      ],
+    });
     await confirmToUser(target, `✅ Thanks! Marked as done for ${r.request_no}.`);
   } catch (err) {
     await confirmToUser(target, `Could not record this: ${(err as Error).message}`);
