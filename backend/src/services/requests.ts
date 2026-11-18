@@ -9,7 +9,7 @@ import { badRequest, forbidden, int, notFound, oneOf, requiredStr, str } from '.
 import { storeFile, removeFiles } from './attachments.ts';
 import { eventDoc, logEvent } from './events.ts';
 import { masterNames } from './masters.ts';
-import { notifyPublicSubmission } from './slack.ts';
+import { notifyPublicSubmission, notifySiteVisitIfNeeded } from './slack.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 import { newStages, refreshState, saveRequest, type RequestDoc } from './workflowEngine.ts';
 
@@ -290,6 +290,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
     if (attachments.length) await col.attachments().insertMany(attachments);
     await col.events().insertOne(eventDoc(await nextId('request_events'), id, 'created', `Job card ${requestNo} raised${source === 'public' ? ' via public form' : ''}`, { stageKey: 'created', user, userName: requesterName ?? undefined }));
     if (source === 'public') notifyPublicSubmission(doc, images).catch((e) => console.error('Public-form Slack notify failed:', e));
+    notifySiteVisitIfNeeded(doc).catch((e) => console.error('Site-visit Slack notify failed:', e));
     return { id, request_no: requestNo, tracking_token: token };
   } catch (err) {
     await removeFiles(fileIds);

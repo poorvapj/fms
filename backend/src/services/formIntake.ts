@@ -6,7 +6,7 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { col } from '../db/mongo.ts';
 import { commitImport, saveUpload, validateImport } from '../import/importService.ts';
-import { notifyFormIntake } from './slack.ts';
+import { notifyFormIntake, notifySiteVisitIfNeeded } from './slack.ts';
 import { HttpError } from '../utils/http.ts';
 
 const SYSTEM_USER: AuthUser = { id: 1, username: 'admin', name: 'Administrator', role: 'admin', engineer_id: null, must_change_password: false };
@@ -97,6 +97,7 @@ export async function intakeFormSubmission(body: FormSubmission, ip: string) {
   const created = await col.requests().findOne({ import_batch_id: result.batch_id });
   if (created) {
     await notifyFormIntake(created, { image_url: fields[4], image_base64: body.image_base64 }).catch((e) => console.error('Form-intake Slack notify failed:', e));
+    notifySiteVisitIfNeeded(created as any).catch((e) => console.error('Site-visit Slack notify failed:', e));
   }
   return result;
 }
