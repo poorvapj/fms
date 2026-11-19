@@ -4,7 +4,7 @@ import PDFDocument from 'pdfkit';
 import type { Column } from './reports.ts';
 
 const COL_WIDTHS: Record<string, number> = {
-  row_no: 40, time: 85, site: 95, work_category: 80, image: 220, narration: 190, remark: 130,
+  row_no: 40, time: 85, site: 95, work_category: 80, image: 450, narration: 220, remark: 150,
 };
 
 export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>[], title: string): InstanceType<typeof PDFDocument> {
