@@ -278,7 +278,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
   if (!images.length && !urls.length) throw badRequest('At least one image of the location is required');
   if (images.length + urls.length > 10) throw badRequest('Upload at most 10 images');
 
-  const fileIds = await Promise.all(images.map((f) => storeFile(f)));
+  const stored = await Promise.all(images.map((f) => storeFile(f)));
   try {
     const id = await nextId('requests');
     const [requestNo] = await nextJobNumbers(requestedAt.slice(0, 4));
@@ -299,8 +299,8 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
     const attIds = images.length + urls.length ? await nextId('attachments', images.length + urls.length) : 0;
     const attachments = [
       ...images.map((f, i) => ({
-        _id: attIds + i, request_id: id, stage_key: 'created', kind: 'file', file_id: fileIds[i], file_name: f.originalname.slice(0, 200), mime: f.mimetype,
-        size: f.size, caption: images.length > 1 ? `Image of location ${i + 1}` : 'Image of location', source, uploaded_by: user?.id ?? null, created_at: requestedAt,
+        _id: attIds + i, request_id: id, stage_key: 'created', kind: 'file', file_id: stored[i].id, file_name: f.originalname.slice(0, 200), mime: f.mimetype,
+        size: stored[i].size, caption: images.length > 1 ? `Image of location ${i + 1}` : 'Image of location', source, uploaded_by: user?.id ?? null, created_at: requestedAt,
       })),
       ...urls.map((u: string, i: number) => ({
         _id: attIds + images.length + i, request_id: id, stage_key: 'created', kind: 'url', url: u, caption: 'Image of location', source: 'ui', uploaded_by: user?.id ?? null, created_at: requestedAt,
@@ -312,7 +312,7 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
     notifySiteVisitIfNeeded(doc).catch((e) => console.error('Site-visit Slack notify failed:', e));
     return { id, request_no: requestNo, tracking_token: token };
   } catch (err) {
-    await removeFiles(fileIds);
+    await removeFiles(stored.map((s) => s.id));
     throw err;
   }
 }

@@ -70,7 +70,7 @@ for (const { id, stored_name, ...a } of rows('SELECT * FROM attachments')) {
   if (a.kind === 'file' && stored_name) {
     const p = path.join(uploadsDir, path.basename(stored_name));
     if (existsSync(p)) {
-      doc.file_id = await storeFile({ originalname: a.file_name ?? stored_name, mimetype: a.mime ?? 'application/octet-stream', size: a.size ?? 0, buffer: readFileSync(p) });
+      doc.file_id = (await storeFile({ originalname: a.file_name ?? stored_name, mimetype: a.mime ?? 'application/octet-stream', size: a.size ?? 0, buffer: readFileSync(p) })).id;
       filesMoved++;
     } else filesMissing++;
   }

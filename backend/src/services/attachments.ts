@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import { ObjectId } from 'mongodb';
+import sharp from 'sharp';
 import type { AuthUser } from '../auth/auth.ts';
 import { col, files, nextId } from '../db/mongo.ts';
 import { can } from '../domain/permissions.ts';
@@ -13,13 +14,32 @@ export const ALLOWED_MIME = /^(image\/(jpeg|png|gif|webp|heic|heif)|application\
 
 export interface UploadFile { originalname: string; mimetype: string; size: number; buffer: Buffer }
 
-/** Store file bytes in MongoDB (GridFS) — nothing is kept on the server's disk. */
-export async function storeFile(f: UploadFile): Promise<ObjectId> {
-  const upload = files().openUploadStream(f.originalname.slice(0, 200), { metadata: { mime: f.mimetype } });
+const COMPRESSIBLE_IMAGE = /^image\/(jpeg|png|webp)$/;
+
+/** Downscales + re-encodes a photo to cut bandwidth/storage, without changing its format or
+ *  how the rest of the app sees it (still an image, same mimetype, just smaller bytes). Skipped
+ *  for anything already small, GIFs (animation would break) and HEIC/HEIF (sharp build-dependent). */
+async function compressImage(f: UploadFile): Promise<UploadFile> {
+  if (!COMPRESSIBLE_IMAGE.test(f.mimetype) || f.size < 300 * 1024) return f;
+  try {
+    const img = sharp(f.buffer).rotate().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true });
+    const buffer = f.mimetype === 'image/png' ? await img.png({ quality: 80, compressionLevel: 9 }).toBuffer() : await img.jpeg({ quality: 75, mozjpeg: true }).toBuffer();
+    if (buffer.length >= f.size) return f;
+    return { ...f, buffer, size: buffer.length };
+  } catch {
+    return f; // corrupt/unsupported image data — store the original rather than fail the upload
+  }
+}
+
+/** Store file bytes in MongoDB (GridFS) — nothing is kept on the server's disk. Photos are
+ *  compressed first; `size` in the result reflects what was actually stored. */
+export async function storeFile(f: UploadFile): Promise<{ id: ObjectId; size: number }> {
+  const stored = await compressImage(f);
+  const upload = files().openUploadStream(stored.originalname.slice(0, 200), { metadata: { mime: stored.mimetype } });
   await new Promise<void>((resolve, reject) => {
-    Readable.from(f.buffer).pipe(upload).on('finish', () => resolve()).on('error', reject);
+    Readable.from(stored.buffer).pipe(upload).on('finish', () => resolve()).on('error', reject);
   });
-  return upload.id as ObjectId;
+  return { id: upload.id as ObjectId, size: stored.size };
 }
 
 export async function removeFiles(ids: (ObjectId | null | undefined)[]) {
@@ -42,9 +62,10 @@ export async function addAttachment(
   const now = nowLocal();
   let doc: Record<string, unknown>;
   if (input.file) {
+    const stored = await storeFile(input.file);
     doc = {
-      kind: 'file', file_id: await storeFile(input.file), file_name: input.file.originalname.slice(0, 200),
-      mime: input.file.mimetype, size: input.file.size,
+      kind: 'file', file_id: stored.id, file_name: input.file.originalname.slice(0, 200),
+      mime: input.file.mimetype, size: stored.size,
     };
   } else {
     const url = str(input.url, 2000);
