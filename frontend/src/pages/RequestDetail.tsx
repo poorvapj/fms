@@ -461,65 +461,6 @@ function ClosureNoteEdit({ d, onDone }: { d: Detail; onDone: (nd: Detail) => voi
   );
 }
 
-function CommentBox({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void }) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState('');
-  const [photos, setPhotos] = useState<File[]>([]);
-  const post = async (kind: 'comment' | 'link') => {
-    setBusy(true);
-    setError(null);
-    try {
-      onDone(kind === 'comment'
-        ? await api.post<Detail>(`/requests/${d.request.id}/comments`, { comment: text })
-        : await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: link, source: 'comment' }));
-      setText('');
-      setLink('');
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const submitPhotos = async () => {
-    if (!photos.length) return;
-    setBusy(true);
-    setError(null);
-    try {
-      let result: Detail | null = null;
-      for (const file of [...photos]) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('source', 'comment');
-        result = await api.post<Detail>(`/requests/${d.request.id}/attachments`, fd);
-        setPhotos((prev) => prev.filter((p) => p !== file));
-      }
-      if (result) onDone(result);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="card">
-      <div className="card-head"><h3>Add comment, photo or link</h3></div>
-      <div className="card-body stack">
-        <textarea className="input" style={{ minHeight: 60 }} placeholder="Write a comment…" value={text} onChange={(e) => setText(e.target.value)} />
-        <button className="btn sm" disabled={busy || !text.trim()} onClick={() => post('comment')}>Post comment</button>
-        <ImagePicker files={photos} onChange={setPhotos} max={50} accept="image/*" label="Add photo" onError={setError} />
-        {photos.length > 0 && <button className="btn sm" disabled={busy} onClick={submitPhotos}>{busy ? 'Uploading…' : `Submit ${photos.length} photo${photos.length > 1 ? 's' : ''}`}</button>}
-        <div className="row">
-          <input className="input" placeholder="https://… (photo / document link)" value={link} onChange={(e) => setLink(e.target.value)} />
-          <button className="btn sm" disabled={busy || !/^https?:\/\//.test(link)} onClick={() => post('link')}>Add</button>
-        </div>
-        <ErrorBox error={error} />
-      </div>
-    </div>
-  );
-}
-
 function EditStageModal({ d, stage, onClose, onDone }: { d: Detail; stage: Stage; onClose: () => void; onDone: (nd: Detail) => void }) {
   const meta = useMeta();
   const [f, setF] = useState({
@@ -623,7 +564,7 @@ function StageStrip({ d }: { d: Detail }) {
 
 // ---------------------------------------------------------------------------------------------------- page
 
-type TabKey = 'overview' | 'materials_approvals' | 'evidence' | 'communication' | 'closed' | 'history';
+type TabKey = 'overview' | 'materials_approvals' | 'evidence' | 'closed' | 'history';
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -645,16 +586,14 @@ export function RequestDetail() {
   const delayResponsibility = r.is_overdue && activeStage ? (activeStage.responsible_name ?? activeStage.responsible_role ?? 'Unassigned') : 'NONE';
   const materialStages = data.stages.filter((s) => s.stage_key === 'material');
   const approvalStages = data.stages.filter((s) => s.stage_key === 'permission');
-  const commentEvents = data.events.filter((e) => e.type === 'comment');
 
   const closurePhotos = data.attachments.filter((a) => a.stage_key === 'closed' && a.source !== 'comment');
   const tabDefs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' }, { key: 'materials_approvals', label: 'Materials & Approvals' },
-    { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' },
+    { key: 'evidence', label: 'Evidence' },
     ...(r.status === 'closed' ? [{ key: 'closed' as const, label: 'Closed' }] : []),
     { key: 'history', label: 'History' },
   ];
-  const commentPhotos = data.attachments.filter((a) => a.source === 'comment');
   const evidenceAttachments = data.attachments.filter((a) => a.source !== 'comment' && a.stage_key !== 'closed');
 
   return (
@@ -758,26 +697,6 @@ export function RequestDetail() {
         <div className="card">
           <div className="card-head"><h3>Evidence & attachments</h3><span className="muted small">{evidenceAttachments.length}</span></div>
           <div className="card-body"><Evidence items={evidenceAttachments} /></div>
-        </div>
-      )}
-
-      {tab === 'communication' && (
-        <div className="stack">
-          {commentPhotos.length > 0 && (
-            <div className="card">
-              <div className="card-head"><h3>Photos</h3><span className="muted small">{commentPhotos.length}</span></div>
-              <div className="card-body"><Evidence items={commentPhotos} onDelete={can('request.comment') ? reload : undefined} /></div>
-            </div>
-          )}
-          {can('request.comment') && <CommentBox d={data} onDone={setData} />}
-          <div className="card">
-            <div className="card-head"><h3>Comments</h3></div>
-            {commentEvents.length === 0 ? <Empty title="No comments yet" /> : (
-              <ul className="events">
-                {commentEvents.map((e) => <li key={e.id}>{e.message}<div className="meta">{e.user_name} · {fmtDateTime(e.created_at)}</div></li>)}
-              </ul>
-            )}
-          </div>
         </div>
       )}
 
