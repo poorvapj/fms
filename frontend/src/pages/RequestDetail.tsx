@@ -643,8 +643,8 @@ export function RequestDetail() {
   const currentOwner = activeStage ? (activeStage.engineer_name ?? activeStage.responsible_name ?? activeStage.responsible_role) : null;
   const reopenCount = data.events.filter((e) => e.type === 'reopen').length;
   const delayResponsibility = r.is_overdue && activeStage ? (activeStage.responsible_name ?? activeStage.responsible_role ?? 'Unassigned') : 'NONE';
-  const materialStages = data.stages.filter((s) => ['material', 'permission'].includes(s.stage_key));
-  const approvalStages = data.stages.filter((s) => s.decision_stage);
+  const materialStages = data.stages.filter((s) => s.stage_key === 'material');
+  const approvalStages = data.stages.filter((s) => s.stage_key === 'permission');
   const commentEvents = data.events.filter((e) => e.type === 'comment');
 
   const closurePhotos = data.attachments.filter((a) => a.stage_key === 'closed' && a.source !== 'comment');
@@ -739,7 +739,7 @@ export function RequestDetail() {
 
       {tab === 'materials' && (
         <div className="card">
-          <div className="card-head"><h3>Materials / Dependency & Permission</h3></div>
+          <div className="card-head"><h3>Material / Dependency</h3></div>
           <div className="card-body stack">
             {materialStages.length === 0 ? <Empty title="Not applicable to this job card" /> : materialStages.map((s) => (
               <StageDetail key={s.stage_key} d={data} stageKey={s.stage_key} onEdit={setEditing} canEdit={can('stage.edit_history')} />
