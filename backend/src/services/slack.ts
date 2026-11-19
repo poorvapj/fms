@@ -13,7 +13,7 @@ import { refreshState, saveRequest, stageOf, type RequestDoc } from './workflowE
 const SLACK_API = 'https://slack.com/api';
 
 export function slackEnabled() {
-  return !!config.slackBotToken;
+  return !!config.slackBotToken && process.env.FMS_ENV === 'live';
 }
 
 async function slackApi(method: string, body: Record<string, unknown>) {
