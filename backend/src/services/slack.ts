@@ -335,6 +335,7 @@ async function handleYes(requestId: number, payload: any) {
 async function handleYesSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
   const target = { channel, ts, slackUserId, responseUrl };
+  if (slackUserId) await col.slackPendingPhotos().deleteOne({ slack_user_id: slackUserId });
   try {
     const found = await siteVisitUser(requestId, slackUserId);
     if (!found) return confirmToUser(target, 'This job card could not be updated.');
@@ -429,6 +430,7 @@ function closureSummaryLines(r: RequestDoc): string {
 async function handleClosureYesSubmit(payload: any) {
   const { requestId, responseUrl, slackUserId, channel, ts } = JSON.parse(payload.view.private_metadata);
   const target = { channel, ts, slackUserId, responseUrl };
+  if (slackUserId) await col.slackPendingPhotos().deleteOne({ slack_user_id: slackUserId });
   try {
     const r = await loadRequest(requestId);
     const raw = (payload.view.state.values.photo_block?.photo?.value as string | null)?.trim();
