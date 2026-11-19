@@ -623,7 +623,7 @@ function StageStrip({ d }: { d: Detail }) {
 
 // ---------------------------------------------------------------------------------------------------- page
 
-type TabKey = 'overview' | 'materials' | 'approvals' | 'evidence' | 'communication' | 'closed' | 'history';
+type TabKey = 'overview' | 'materials_approvals' | 'evidence' | 'communication' | 'closed' | 'history';
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -649,8 +649,8 @@ export function RequestDetail() {
 
   const closurePhotos = data.attachments.filter((a) => a.stage_key === 'closed' && a.source !== 'comment');
   const tabDefs: { key: TabKey; label: string }[] = [
-    { key: 'overview', label: 'Overview' }, { key: 'materials', label: 'Materials' },
-    { key: 'approvals', label: 'Approvals' }, { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' },
+    { key: 'overview', label: 'Overview' }, { key: 'materials_approvals', label: 'Materials & Approvals' },
+    { key: 'evidence', label: 'Evidence' }, { key: 'communication', label: 'Comments' },
     ...(r.status === 'closed' ? [{ key: 'closed' as const, label: 'Closed' }] : []),
     { key: 'history', label: 'History' },
   ];
@@ -737,7 +737,7 @@ export function RequestDetail() {
         </div>
       )}
 
-      {tab === 'materials' && (
+      {tab === 'materials_approvals' && (
         <div className="card">
           <div className="card-head"><h3>Material / Dependency</h3></div>
           <div className="card-body stack">
@@ -745,12 +745,7 @@ export function RequestDetail() {
               <StageDetail key={s.stage_key} d={data} stageKey={s.stage_key} onEdit={setEditing} canEdit={can('stage.edit_history')} />
             ))}
           </div>
-        </div>
-      )}
-
-      {tab === 'approvals' && (
-        <div className="card">
-          <div className="card-head"><h3>Approvals</h3></div>
+          <div className="card-head"><h3>Permission / Approval</h3></div>
           <div className="card-body stack">
             {approvalStages.length === 0 ? <Empty title="No approval stages" /> : approvalStages.map((s) => (
               <StageDetail key={s.stage_key} d={data} stageKey={s.stage_key} onEdit={setEditing} canEdit={can('stage.edit_history')} />
