@@ -4,7 +4,7 @@ import PDFDocument from 'pdfkit';
 import type { Column } from './reports.ts';
 
 const COL_WIDTHS: Record<string, number> = {
-  row_no: 35, time: 75, site: 85, work_category: 70, image_1: 150, image_2: 150, narration: 170, sheet_row_no: 45, remark: 110,
+  row_no: 40, time: 85, site: 95, work_category: 80, image: 220, narration: 190, remark: 130,
 };
 
 export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>[], title: string): InstanceType<typeof PDFDocument> {
@@ -13,30 +13,30 @@ export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>
   const startX = doc.page.margins.left;
   const tableWidth = widths.reduce((a, b) => a + b, 0);
 
-  doc.fontSize(14).font('Helvetica-Bold').text(title, startX, doc.y);
+  doc.fontSize(18).font('Helvetica-Bold').text(title, startX, doc.y);
   doc.moveDown(0.5);
 
   const drawHeader = () => {
     const y = doc.y;
-    doc.font('Helvetica-Bold').fontSize(8);
+    doc.font('Helvetica-Bold').fontSize(11);
     let x = startX;
     for (let i = 0; i < columns.length; i++) {
-      doc.rect(x, y, widths[i], 20).stroke();
-      doc.text(columns[i].label, x + 3, y + 6, { width: widths[i] - 6, height: 14, ellipsis: true });
+      doc.rect(x, y, widths[i], 26).stroke();
+      doc.text(columns[i].label, x + 4, y + 7, { width: widths[i] - 8, height: 18, ellipsis: true });
       x += widths[i];
     }
-    doc.y = y + 20;
+    doc.y = y + 26;
   };
 
   const rowHeight = (r: Record<string, unknown>) => {
-    doc.font('Helvetica').fontSize(7);
+    doc.font('Helvetica').fontSize(10);
     let maxLines = 1;
     for (let i = 0; i < columns.length; i++) {
       const text = String(r[columns[i].key] ?? '');
-      const h = doc.heightOfString(text, { width: widths[i] - 6 });
-      maxLines = Math.max(maxLines, Math.ceil(h / 9));
+      const h = doc.heightOfString(text, { width: widths[i] - 8 });
+      maxLines = Math.max(maxLines, Math.ceil(h / 12));
     }
-    return Math.max(18, maxLines * 9 + 6);
+    return Math.max(24, maxLines * 12 + 8);
   };
 
   drawHeader();
@@ -50,10 +50,10 @@ export function renderLegacyPdf(columns: Column[], rows: Record<string, unknown>
     const bg = r._bg as string | null | undefined;
     if (bg) doc.rect(startX, y, tableWidth, h).fill(bg);
     let x = startX;
-    doc.font('Helvetica').fontSize(7).fillColor('black');
+    doc.font('Helvetica').fontSize(10).fillColor('black');
     for (let i = 0; i < columns.length; i++) {
       doc.rect(x, y, widths[i], h).stroke();
-      doc.text(String(r[columns[i].key] ?? ''), x + 3, y + 3, { width: widths[i] - 6, height: h - 6 });
+      doc.text(String(r[columns[i].key] ?? ''), x + 4, y + 4, { width: widths[i] - 8, height: h - 8 });
       x += widths[i];
     }
     doc.y = y + h;
