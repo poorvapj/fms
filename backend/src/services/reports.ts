@@ -172,8 +172,8 @@ async function reopenedIds(): Promise<Set<number>> {
 
 export const LEGACY_PENDING_COLUMNS: Column[] = [
   { key: 'row_no', label: 'Row No.', type: 'number' }, { key: 'time', label: 'Time' }, { key: 'site', label: 'Site' },
-  { key: 'work_category', label: 'Work Category' }, { key: 'image_1', label: 'Image of Location 1' }, { key: 'image_2', label: 'Image of Location 2' },
-  { key: 'narration', label: 'Narration' }, { key: 'sheet_row_no', label: 'Row No.', type: 'number' }, { key: 'remark', label: 'Remark' },
+  { key: 'work_category', label: 'Work Category' }, { key: 'image', label: 'Image of Location' },
+  { key: 'narration', label: 'Narration' }, { key: 'remark', label: 'Remark' },
 ];
 
 const BAD_CLOSURE = /not feasible|wrong complaint|rejected/i;
@@ -216,8 +216,8 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
     }
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
-      work_category: names.categories.get(r.category_id) ?? '', image_1: imgs[0] ?? '', image_2: imgs[1] ?? '',
-      narration: r.description ?? '', sheet_row_no: r.import_row_no ?? '', remark: remark ?? '',
+      work_category: names.categories.get(r.category_id) ?? '', image: imgs.join(', '),
+      narration: r.description ?? '', remark: remark ?? '',
       _bg: rowBg(r, remark),
     };
   });
