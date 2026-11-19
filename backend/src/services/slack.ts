@@ -417,10 +417,15 @@ async function handleClosureYes(requestId: number, payload: any) {
     },
   });
   const slackUserId: string | undefined = payload.user?.id;
-  if (opened.ok && slackUserId) {
-    const r = await loadRequest(requestId).catch(() => null);
-    if (r) await markAwaitingPhoto(slackUserId, requestId, 'closed', { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+  if (opened.ok) {
+    if (slackUserId) {
+      const r = await loadRequest(requestId).catch(() => null);
+      if (r) await markAwaitingPhoto(slackUserId, requestId, 'closed', { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+    }
+    return;
   }
+  console.error('views.open failed for closure_yes:', opened.error);
+  if (slackUserId) await slackApi('chat.postMessage', { channel: slackUserId, text: 'Could not open the confirmation form — please tap "Yes, done" again in a moment.' });
 }
 
 /** Job: JC-xxx / Work: description / Raised on: .. / Completed on: .. — shared by the group-channel

@@ -23,7 +23,9 @@ async function compressImage(f: UploadFile): Promise<UploadFile> {
   if (!COMPRESSIBLE_IMAGE.test(f.mimetype) || f.size < 300 * 1024) return f;
   try {
     const img = sharp(f.buffer).rotate().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true });
-    const buffer = f.mimetype === 'image/png' ? await img.png({ quality: 80, compressionLevel: 9 }).toBuffer() : await img.jpeg({ quality: 75, mozjpeg: true }).toBuffer();
+    const buffer = f.mimetype === 'image/png' ? await img.png({ quality: 80, compressionLevel: 9 }).toBuffer()
+      : f.mimetype === 'image/webp' ? await img.webp({ quality: 75 }).toBuffer()
+      : await img.jpeg({ quality: 75, mozjpeg: true }).toBuffer();
     if (buffer.length >= f.size) return f;
     return { ...f, buffer, size: buffer.length };
   } catch {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { ImagePicker } from '../components/ImagePicker';
@@ -152,6 +152,7 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
   const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const alreadyUploaded = useRef<Set<File>>(new Set());
   const r = d.request;
   const live = !['closed', 'cancelled'].includes(r.status);
   const canFastClose = live && r.status !== 'on_hold' && !['closed', 'completed'].includes(r.status) && can('request.manage');
@@ -168,13 +169,16 @@ function RequestActions({ d, onDone }: { d: Detail; onDone: (nd: Detail) => void
       const endpoint = dialog === 'resolve-close' ? 'fast-close' : dialog;
       let result: Detail | undefined;
       for (const photo of [...photos]) {
+        if (alreadyUploaded.current.has(photo)) continue;
         const fd = new FormData();
         fd.append('file', photo);
         fd.append('stage_key', 'closed');
         result = await api.post<Detail>(`/requests/${r.id}/attachments`, fd);
-        setPhotos((prev) => prev.filter((p) => p !== photo));
+        alreadyUploaded.current.add(photo);
       }
       result = await api.post<Detail>(`/requests/${r.id}/${endpoint}`, body);
+      alreadyUploaded.current.clear();
+      setPhotos([]);
       onDone(result);
       setDialog(null);
       setText('');
@@ -578,6 +582,7 @@ export function RequestDetail() {
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return null;
   const r = data.request;
+  if (tab === 'closed' && r.status !== 'closed') setTab('overview');
   const fact = (k: string, v: ReactNode) => <div className="fact"><div className="k">{k}</div><div className="v">{v ?? '—'}</div></div>;
   const locationImages = data.attachments.filter((a) => a.stage_key === 'created');
   const activeStage = data.stages.find((s) => s.status === 'active');

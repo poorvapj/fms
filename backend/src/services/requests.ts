@@ -279,8 +279,9 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
   if (images.length + urls.length > 10) throw badRequest('Upload at most 10 images');
 
   const stored = await Promise.all(images.map((f) => storeFile(f)));
+  let id: number | undefined;
   try {
-    const id = await nextId('requests');
+    id = await nextId('requests');
     const [requestNo] = await nextJobNumbers(requestedAt.slice(0, 4));
     const token = source === 'public' ? randomBytes(18).toString('base64url') : null;
     const doc: RequestDoc = {
@@ -313,6 +314,11 @@ export async function createRequest(body: any, user: AuthUser | null, images: Up
     return { id, request_no: requestNo, tracking_token: token };
   } catch (err) {
     await removeFiles(stored.map((s) => s.id));
+    if (id !== undefined) {
+      await col.requests().deleteOne({ _id: id });
+      await col.attachments().deleteMany({ request_id: id });
+      await col.events().deleteMany({ request_id: id });
+    }
     throw err;
   }
 }
