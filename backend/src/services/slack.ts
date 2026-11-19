@@ -147,8 +147,8 @@ export async function notifyPublicSubmission(r: RequestDoc, images: { buffer: Bu
  *  site engineer has been formally assigned on the job card yet. */
 const SITE_VISIT_NOTIFY = ['Kuldeep', 'Arun Batham'];
 /** Additional people (not engineer records) who should get the same DM, just to stay in the loop —
- *  Poorva isn't a field engineer, so she's listed by Slack user ID directly instead. */
-const SITE_VISIT_NOTIFY_EXTRA = [{ name: 'Poorva Jain', slack_user_id: 'U0BSHH0PJN5' }];
+ *  listed by Slack user ID directly since they aren't field engineers. Empty: nobody extra right now. */
+const SITE_VISIT_NOTIFY_EXTRA: { name: string; slack_user_id: string }[] = [];
 
 /** Site visit stage just went active — DM Kuldeep and Arun (whoever actually goes does the visit),
  *  once per job card, regardless of whether a site engineer has been assigned on the record. */
