@@ -269,7 +269,6 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const [comments, setComments] = useState('');
   const [engineerId, setEngineerId] = useState(String(d.request.assigned_engineer_id ?? d.request.site_engineer_id ?? ''));
   const [closureCategory, setClosureCategory] = useState('');
-  const [evidenceLink, setEvidenceLink] = useState('');
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -279,13 +278,6 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
   const needsEvidence = !hasEvidence && !evidenceFiles.length;
-
-  const addEvidenceLink = async () => {
-    setBusy('evidence');
-    setError(null);
-    try { onDone(await api.post<Detail>(`/requests/${d.request.id}/attachments`, { url: evidenceLink, stage_key: stage.stage_key })); setEvidenceLink(''); }
-    catch (e) { setError(errorText(e)); } finally { setBusy(null); }
-  };
 
   const pickEvidencePhotos = (files: File[]) => setEvidenceFiles(files);
 
@@ -361,10 +353,6 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
               label={needsClosure ? 'Upload photo/video' : 'Upload photo'}
             />
             {busy === 'evidence' && <div className="muted small">Uploading…</div>}
-            <div className="row">
-              <input className="input" placeholder="…or paste a https:// photo / document link" value={evidenceLink} onChange={(e) => setEvidenceLink(e.target.value)} />
-              <button className="btn sm" disabled={busy === 'evidence' || !/^https?:\/\//.test(evidenceLink)} onClick={addEvidenceLink}>Add link</button>
-            </div>
           </div>
         </div>
         <div className="row wrap">
