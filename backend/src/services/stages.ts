@@ -120,6 +120,23 @@ export async function skipStage(requestId: number, key: StageKey, body: any, use
   await logEvent(requestId, 'stage_skipped', `${def.name} skipped: ${reason}`, { stageKey: key, user });
 }
 
+/** "No, not done" on a stage that isn't a decision stage (e.g. Site Visit) — leaves the stage
+ *  active but flags it with the reason, same shape as the Slack "No" reply (handleNoSubmit). */
+export async function flagStage(requestId: number, key: StageKey, body: any, user: AuthUser) {
+  const r = await loadRequest(requestId);
+  assertCanView(user, r);
+  const def = stageDef(key);
+  const stage = stageOf(r, key);
+  if (!canActOnStage(user, def, r, stage)) throw forbidden(`You cannot update the ${def.name} stage`);
+  assertLive(r);
+  if (stage.status !== 'active') throw conflict(`${def.name} is not the current stage`);
+  const reason = requiredStr(body.reason, 'Reason', 1000);
+  Object.assign(stage, { attention: true, comments: reason, updated_by: user.id, updated_at: nowLocal() });
+  refreshState(r);
+  await saveRequest(r);
+  await logEvent(requestId, 'comment', `${def.name} not done — ${reason}`, { stageKey: key, user });
+}
+
 export async function decideStage(requestId: number, key: StageKey, body: any, user: AuthUser) {
   const def = stageDef(key);
   if (!def.decision) throw badRequest(`${def.name} does not take an approval decision`);

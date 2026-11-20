@@ -277,11 +277,11 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const hasEvidence = d.attachments.some((a) => a.stage_key === stage.stage_key);
   const needsEngineer = stage.stage_key === 'work_started';
   const needsClosure = stage.stage_key === 'closed';
-  const needsEvidence = !hasEvidence && !evidenceFiles.length;
+  const needsEvidence = def.requires_evidence && !hasEvidence && !evidenceFiles.length;
 
   const pickEvidencePhotos = (files: File[]) => setEvidenceFiles(files);
 
-  const act = async (kind: 'complete' | 'approve' | 'reject' | 'skip') => {
+  const act = async (kind: 'complete' | 'approve' | 'reject' | 'skip' | 'flag') => {
     setBusy(kind);
     setError(null);
     try {
@@ -295,6 +295,8 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
       let result: Detail;
       if (kind === 'skip') {
         result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/skip`, { reason: comments });
+      } else if (kind === 'flag') {
+        result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/flag`, { reason: comments });
       } else if (kind === 'approve' || kind === 'reject') {
         result = await api.post<Detail>(`/requests/${d.request.id}/stages/${stage.stage_key}/decision`, {
           decision: kind === 'approve' ? 'approved' : 'rejected', comments, engineer_id: engineerId || undefined,
@@ -319,6 +321,8 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
   const rejectNeedsReason = !comments.trim();
   const skipNeedsReason = !comments.trim();
   const closedNeedsCategory = needsClosure && !closureCategory;
+  const isSiteVisit = stage.stage_key === 'site_visit';
+  const flagNeedsReason = !comments.trim();
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -344,6 +348,7 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
             <textarea className="input" style={{ minHeight: 60 }} placeholder="Notes for this stage (visible in the timeline)…" value={comments} onChange={(e) => setComments(e.target.value)} />
           </Field>
         </div>
+        {def.requires_evidence && (
         <div className={needsEvidence ? 'alert warn' : undefined}>
           {needsEvidence && <><Icon name="alert" />This stage needs evidence before it can be marked done.</>}
           <div className="stack" style={{ marginTop: needsEvidence ? 8 : 0, gap: 8 }}>
@@ -355,18 +360,33 @@ function CurrentStageAction({ d, onDone }: { d: Detail; onDone: (nd: Detail) => 
             {busy === 'evidence' && <div className="muted small">Uploading…</div>}
           </div>
         </div>
+        )}
         <div className="row wrap">
           {def.decision ? (
             <>
               <button className="btn sm primary" disabled={!!busy} onClick={() => act('approve')}><Icon name="check" size={13} />{busy === 'approve' ? 'Saving…' : 'Approve'}</button>
               <button className="btn sm danger" disabled={!!busy || rejectNeedsReason} title={rejectNeedsReason ? 'Remarks required to reject' : undefined} onClick={() => act('reject')}><Icon name="x" size={13} />{busy === 'reject' ? 'Saving…' : 'Reject'}</button>
             </>
+          ) : isSiteVisit ? (
+            <>
+              <button className="btn sm primary" disabled={!!busy || needsEvidence || (needsEngineer && !engineerId) || closedNeedsCategory} onClick={() => act('complete')}>
+                <Icon name="check" size={13} />{busy === 'complete' ? 'Saving…' : 'Yes'}
+              </button>
+              <button className="btn sm danger" disabled={!!busy || flagNeedsReason} title={flagNeedsReason ? 'Remarks required' : undefined} onClick={() => act('flag')}>
+                <Icon name="x" size={13} />{busy === 'flag' ? 'Saving…' : 'No'}
+              </button>
+              {(def.optional || can('request.manage')) && (
+                <button className="btn sm ghost" disabled={!!busy || skipNeedsReason} title={skipNeedsReason ? 'Remarks required' : undefined} onClick={() => act('skip')}>
+                  <Icon name="skip" size={13} />{busy === 'skip' ? 'Saving…' : 'Not Needed'}
+                </button>
+              )}
+            </>
           ) : (
             <button className="btn sm primary" disabled={!!busy || needsEvidence || (needsEngineer && !engineerId) || closedNeedsCategory} onClick={() => act('complete')}>
               <Icon name="check" size={13} />{busy === 'complete' ? 'Saving…' : 'Mark Done'}
             </button>
           )}
-          {(def.optional || can('request.manage')) && (
+          {!isSiteVisit && (def.optional || can('request.manage')) && (
             <button className="btn sm ghost" disabled={!!busy || skipNeedsReason} title={skipNeedsReason ? 'Remarks required to skip' : def.optional ? undefined : 'Mandatory stage — force-skip as coordinator/admin'} onClick={() => act('skip')}>
               <Icon name="skip" size={13} />{busy === 'skip' ? 'Saving…' : def.optional ? 'Skip (not needed)' : 'Force Skip'}
             </button>

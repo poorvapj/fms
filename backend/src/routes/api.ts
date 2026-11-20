@@ -21,7 +21,7 @@ import { renderLegacyPdf } from '../services/pdfExport.ts';
 import { buildFilter, createRequest, deleteRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
-  addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
+  addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, flagStage, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
 } from '../services/stages.ts';
 import { changeOwnPassword, createUser, listUsers, updateUser } from '../services/users.ts';
 import { listAuditLog } from '../services/audit.ts';
@@ -134,7 +134,7 @@ api.patch('/requests/:id', async (req, res) => {
 api.delete('/requests/:id', async (req, res) => { res.json(await deleteRequest(id(req), req.user!)); });
 
 const stageKey = (req: Request) => stageDef(String(req.params.key)).key as StageKey;
-const stageRoutes = { complete: completeStage, skip: skipStage, decision: decideStage } as const;
+const stageRoutes = { complete: completeStage, skip: skipStage, decision: decideStage, flag: flagStage } as const;
 for (const [name, fn] of Object.entries(stageRoutes)) {
   api.post(`/requests/:id/stages/:key/${name}`, async (req, res) => {
     await fn(id(req), stageKey(req), req.body ?? {}, req.user!);

@@ -4,7 +4,7 @@ import { col } from '../db/mongo.ts';
 import { WORK_TYPES } from '../domain/workflow.ts';
 import { addAttachment } from './attachments.ts';
 import { masterNames } from './masters.ts';
-import { completeStage } from './stages.ts';
+import { completeStage, skipStage } from './stages.ts';
 import { logEvent } from './events.ts';
 import { loadRequest } from './requests.ts';
 import { formatMs, nowLocal, toMs } from '../utils/dates.ts';
@@ -262,6 +262,8 @@ export async function handleSlackInteraction(payload: any) {
     if (action.action_id === 'site_visit_no') return handleNo(requestId, payload);
     if (action.action_id === 'closure_yes') return handleClosureYes(requestId, payload);
     if (action.action_id === 'closure_no') return handleClosureNo(requestId, payload);
+    if (action.action_id === 'material_yes') return handleMaterialRequired(requestId, payload, true);
+    if (action.action_id === 'material_no') return handleMaterialRequired(requestId, payload, false);
   }
   if (payload.type === 'view_submission' && payload.view?.callback_id === 'site_visit_no_reason') {
     return handleNoSubmit(payload);
@@ -329,6 +331,7 @@ async function handleYes(requestId: number, payload: any) {
   try {
     await completeStage(requestId, 'site_visit', {}, found.user);
     await confirmToUser(target, `✅ Marked *Site Visit* as done for ${found.r.request_no} by ${found.user.name}. Thanks!`);
+    if (slackUserId) await askMaterialRequired(requestId, slackUserId);
   } catch (err) {
     await confirmToUser(target, `Could not update: ${(err as Error).message}`);
   }
@@ -347,8 +350,55 @@ async function handleYesSubmit(payload: any) {
       await addAttachment(requestId, { stage_key: 'site_visit', url: link }, found.user);
     }
     await confirmToUser(target, `✅ Marked *Site Visit* as done for ${found.r.request_no} by ${found.user.name}${link ? ' (with photo link)' : ''}. Thanks!`);
+    if (slackUserId) await askMaterialRequired(requestId, slackUserId);
   } catch (err) {
     await confirmToUser(target, `Could not update: ${(err as Error).message}`);
+  }
+}
+
+/** Form the store team fills in once an engineer flags that a job needs material. */
+const MATERIAL_FORM_URL = 'https://nexoraos.in/e/tyfR4n2_qXs8iGQD9o0kt4ixeRIWQN1TnA8aSE7sCvv_bF_21t3nfiwgTLg0XiX9';
+
+/** Asked right after Site Visit is marked done (Slack flow only) — separate DM so it doesn't
+ *  block the "Site visit done" confirmation itself. */
+async function askMaterialRequired(requestId: number, slackUserId: string) {
+  const text = 'Is material required for this job?';
+  await slackApi('chat.postMessage', {
+    channel: slackUserId,
+    text,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text } },
+      {
+        type: 'actions',
+        elements: [
+          { type: 'button', text: { type: 'plain_text', text: '✅ Yes' }, style: 'primary', action_id: 'material_yes', value: String(requestId) },
+          { type: 'button', text: { type: 'plain_text', text: '❌ No' }, style: 'danger', action_id: 'material_no', value: String(requestId) },
+        ],
+      },
+    ],
+  });
+}
+
+/** "Yes"/"No" reply to askMaterialRequired. Yes: just flags the request and sends the material
+ *  form link, leaving the Material stage active for the store team to actually process. No:
+ *  skips the Material stage outright (same as a manual "Skip (not needed)" on that stage). */
+async function handleMaterialRequired(requestId: number, payload: any, required: boolean) {
+  const slackUserId: string | undefined = payload.user?.id;
+  const target = { channel: payload.channel?.id, ts: payload.message?.ts, slackUserId, responseUrl: payload.response_url };
+  try {
+    const r = await loadRequest(requestId);
+    const slackUser: AuthUser = { id: 0, username: 'slack', name: 'Slack', role: 'admin', engineer_id: null, must_change_password: false };
+    if (required) {
+      await col.requests().updateOne({ _id: requestId }, { $set: { requires_material: 1 } });
+      await logEvent(requestId, 'comment', 'Material required (via Slack)', { stageKey: 'material', userName: 'Slack' });
+      await confirmToUser(target, `✅ Noted for ${r.request_no} — please fill this form for the material request:\n${MATERIAL_FORM_URL}`);
+    } else {
+      await skipStage(requestId, 'material', { reason: 'Not required (confirmed via Slack)' }, slackUser);
+      await confirmToUser(target, `Noted — Material stage skipped for ${r.request_no} (not required).`);
+    }
+  } catch (err) {
+    console.error('Failed to record material-required reply:', err);
+    await confirmToUser(target, `Could not record this: ${(err as Error).message}`);
   }
 }
 
