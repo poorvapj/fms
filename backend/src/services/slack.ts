@@ -61,6 +61,14 @@ async function confirmToUser(
 }
 
 const FORM_INTAKE_CHANNEL = 'C0AVD30QM33';
+/** Same Slack id as SITE_VISIT_NOTIFY_EXTRA — Poorva stays in the loop on every DM-type Slack
+ *  notification (not the group-channel posts, she already sees those), as a plain FYI copy with
+ *  no action buttons so she can never accidentally trigger someone else's flow by clicking. */
+const POORVA_SLACK_ID = 'U0BSHH0PJN5';
+
+async function notifyPoorvaCopy(label: string, text: string) {
+  await slackApi('chat.postMessage', { channel: POORVA_SLACK_ID, text: `_(FYI — ${label})_\n${text}` });
+}
 
 /** "2026-11-13T18:25:31" -> "11/13/2026 18:25:31" (mirrors the Google Form's own Sheet timestamp format). */
 function fmtUs(iso: string | null): string {
@@ -212,6 +220,7 @@ export async function notifyRequesterOnCloseIfNeeded(r: RequestDoc) {
     ],
   });
   await logEvent(r._id, 'slack_notified', `Slack closure-confirmation sent to requester (${r.requester_email})`, { stageKey: 'closure_confirm', userName: 'Slack' });
+  await notifyPoorvaCopy(`closure-confirmation sent to requester for ${r.request_no}`, text);
 }
 
 /** Remembers "if this Slack user DMs a photo in the next 15 min, attach it here" — set right
@@ -362,6 +371,7 @@ const MATERIAL_FORM_URL = 'https://nexoraos.in/e/tyfR4n2_qXs8iGQD9o0kt4ixeRIWQN1
 /** Asked right after Site Visit is marked done (Slack flow only) — separate DM so it doesn't
  *  block the "Site visit done" confirmation itself. */
 async function askMaterialRequired(requestId: number, slackUserId: string) {
+  const r = await loadRequest(requestId).catch(() => null);
   const text = 'Is material required for this job?';
   await slackApi('chat.postMessage', {
     channel: slackUserId,
@@ -377,6 +387,7 @@ async function askMaterialRequired(requestId: number, slackUserId: string) {
       },
     ],
   });
+  await notifyPoorvaCopy(r ? `material-required asked for ${r.request_no}` : 'material-required asked', text);
 }
 
 /** "Yes"/"No" reply to askMaterialRequired. Yes: just flags the request and sends the material
