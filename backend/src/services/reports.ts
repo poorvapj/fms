@@ -214,6 +214,9 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
     if (r.status === 'closed' && ref && !remark?.includes(`FMS ref ${ref}`)) {
       remark = remark ? `${remark} (FMS ref ${ref})` : `(FMS ref ${ref})`;
     }
+    if (!remark && !['closed', 'cancelled'].includes(r.status) && r.current_stage_key) {
+      remark = `Pending at ${stageName(r.current_stage_key)}`;
+    }
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',
       work_category: names.categories.get(r.category_id) ?? '', image: imgs.join(', '),
