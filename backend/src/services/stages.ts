@@ -12,7 +12,7 @@ import { notifyRequesterOnCloseIfNeeded, notifySiteVisitIfNeeded } from './slack
 
 /** Whether a user may act on a stage of a job card (role + engineer binding). */
 export function canActOnStage(user: AuthUser, def: StageDefinition, r: Doc, stage: StageDoc | null): boolean {
-  if (!can(user.role, 'stage.update') || !def.roles.includes(user.role)) return false;
+  if (!can(user, 'stage.update') || !def.roles.includes(user.role)) return false;
   if (user.role !== 'engineer') return true;
   if (!user.engineer_id) return false;
   if (def.key === 'site_visit') return r.site_engineer_id === user.engineer_id || stage?.engineer_id === user.engineer_id;
@@ -32,7 +32,7 @@ function resolveActual(body: any, r: Doc, user: AuthUser): string {
   if (!at) throw badRequest('Invalid actual date/time');
   if (at > now) throw badRequest('Actual date/time cannot be in the future');
   if (at < r.requested_at) throw badRequest('Actual date/time cannot be before the job card was raised');
-  if (!can(user.role, 'request.manage') && toMs(now)! - toMs(at)! > 48 * 3600000) {
+  if (!can(user, 'request.manage') && toMs(now)! - toMs(at)! > 48 * 3600000) {
     throw badRequest('Only coordinators can back-date an update by more than 48 hours');
   }
   return at;
@@ -108,8 +108,8 @@ export async function skipStage(requestId: number, key: StageKey, body: any, use
   const stage = stageOf(r, key);
   // Optional stages can be skipped by whoever can act on them; mandatory stages only by someone
   // who manages the whole job card (admin/coordinator), as a deliberate manual override.
-  if (!def.optional && !can(user.role, 'request.manage')) throw badRequest(`${def.name} is mandatory and cannot be skipped`);
-  if (!canActOnStage(user, def, r, stage) && !can(user.role, 'request.manage')) throw forbidden();
+  if (!def.optional && !can(user, 'request.manage')) throw badRequest(`${def.name} is mandatory and cannot be skipped`);
+  if (!canActOnStage(user, def, r, stage) && !can(user, 'request.manage')) throw forbidden();
   assertLive(r);
   if (!['active', 'pending'].includes(stage.status)) throw conflict(`${def.name} cannot be skipped in its current state`);
   const reason = requiredStr(body.reason, 'Reason', 1000);
@@ -175,7 +175,7 @@ const STAGE_STATUSES = ['pending', 'active', 'completed', 'skipped', 'rejected']
 
 /** Admin correction of any stage (e.g. fixing imported history). */
 export async function editStage(requestId: number, key: StageKey, body: any, user: AuthUser) {
-  if (!can(user.role, 'stage.edit_history')) throw forbidden();
+  if (!can(user, 'stage.edit_history')) throw forbidden();
   const r = await loadRequest(requestId);
   const def = stageDef(key);
   const stage = stageOf(r, key);
@@ -205,7 +205,7 @@ export async function editStage(requestId: number, key: StageKey, body: any, use
 }
 
 function requireManage(user: AuthUser) {
-  if (!can(user.role, 'request.manage')) throw forbidden();
+  if (!can(user, 'request.manage')) throw forbidden();
 }
 
 export async function holdRequest(requestId: number, body: any, user: AuthUser) {
@@ -336,7 +336,7 @@ export async function assignEngineers(requestId: number, body: any, user: AuthUs
 export async function addComment(requestId: number, body: any, user: AuthUser) {
   const r = await loadRequest(requestId);
   assertCanView(user, r);
-  if (!can(user.role, 'request.comment')) throw forbidden();
+  if (!can(user, 'request.comment')) throw forbidden();
   const text = requiredStr(body.comment, 'Comment', 4000);
   const stageKey = body.stage_key ? stageDef(body.stage_key).key : null;
   await logEvent(requestId, 'comment', text, { stageKey, user });

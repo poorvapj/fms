@@ -5,6 +5,7 @@ import { loadEscalationRules } from '../services/escalationRules.ts';
 import { loadHolidays } from '../services/holidays.ts';
 import { ensureMasterByName } from '../services/masters.ts';
 import { seedReasonCodes } from '../services/reasonCodes.ts';
+import { loadRolePermissions } from '../services/rolePermissions.ts';
 import { loadStageDefs } from '../services/stageDefs.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { col, connect, disconnect, masterCol, nextId } from './mongo.ts';
@@ -14,6 +15,7 @@ const CLOSURE_CATEGORIES = ['Work Done', 'Service / Repair Complaint', 'Wrong Co
 /** Idempotent base data required for the app to run. */
 export async function ensureBaseData() {
   await loadStageDefs();
+  await loadRolePermissions();
   await loadHolidays();
   await loadEscalationRules();
   await seedReasonCodes();

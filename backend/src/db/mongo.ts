@@ -63,6 +63,7 @@ export const col = {
   reasonCodes: () => db().collection<any>('reason_codes'),
   auditLog: () => db().collection<any>('audit_log'),
   slackPendingPhotos: () => db().collection<any>('slack_pending_photos'),
+  rolePermissions: () => db().collection<any>('role_permissions'),
 };
 
 export type MasterTable = 'properties' | 'work_categories' | 'engineers';

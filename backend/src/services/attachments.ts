@@ -58,7 +58,7 @@ export async function addAttachment(
 ) {
   const r = await loadRequest(requestId);
   assertCanView(user, r);
-  if (!can(user.role, 'request.comment')) throw forbidden();
+  if (!can(user, 'request.comment')) throw forbidden();
   const stageKey = input.stage_key ? stageDef(input.stage_key).key : null;
   const caption = str(input.caption, 300);
   const now = nowLocal();
@@ -93,10 +93,10 @@ export async function deleteAttachment(id: number, user: AuthUser) {
   if (!a) throw notFound('Attachment');
   const r = await loadRequest(a.request_id);
   assertCanView(user, r);
-  if (!(a.uploaded_by === user.id || can(user.role, 'request.manage'))) throw forbidden();
+  if (!(a.uploaded_by === user.id || can(user, 'request.manage'))) throw forbidden();
   if (a.source === 'fms_import') throw badRequest('Imported evidence cannot be deleted');
   const stage = a.stage_key ? r.stages.find((s) => s.stage_key === a.stage_key) : null;
-  if (stage?.status === 'completed' && !can(user.role, 'request.manage')) throw badRequest('Evidence of a completed stage cannot be removed');
+  if (stage?.status === 'completed' && !can(user, 'request.manage')) throw badRequest('Evidence of a completed stage cannot be removed');
   await col.attachments().deleteOne({ _id: id });
   await removeFiles([a.file_id]);
   await logEvent(a.request_id, 'attachment', `Removed ${a.file_name ?? 'link'}`, { stageKey: a.stage_key, user });

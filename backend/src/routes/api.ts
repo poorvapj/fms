@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { login, logout, requireAuth, requirePermission, userPermissions } from '../auth/auth.ts';
+import { login, logout, requireAuth, requirePermission } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
 import { ROLE_LABELS, ROLES } from '../domain/permissions.ts';
@@ -19,6 +19,7 @@ import { intakeFormSubmission } from '../services/formIntake.ts';
 import { legacyAllSection, PROJECTION as REPORT_PROJECTION, REPORTS, runReport } from '../services/reports.ts';
 import { renderLegacyPdf } from '../services/pdfExport.ts';
 import { buildFilter, createRequest, deleteRequest, getRequestDetail, listRequests, updateRequest } from '../services/requests.ts';
+import { publicRolePermissions, updateRolePermissions } from '../services/rolePermissions.ts';
 import { publicStageDefs, stageDef, updateStageDef } from '../services/stageDefs.ts';
 import {
   addComment, assignEngineers, cancelRequest, completeStage, decideStage, editStage, fastCloseRequest, flagStage, holdRequest, reopenRequest, resumeRequest, skipStage, updateClosureNote,
@@ -57,13 +58,13 @@ api.post('/auth/login', async (req, res) => {
   const password = String(req.body?.password ?? '');
   if (!username || !password) throw badRequest('Email / username and password are required');
   const user = await login(username, password, clientIp(req), res);
-  res.json({ user, permissions: userPermissions(user.role) });
+  res.json({ user, permissions: user.permissions });
 });
 api.post('/auth/logout', (_req, res) => { logout(res); res.json({ ok: true }); });
 
 api.use(requireAuth);
 
-api.get('/auth/me', (req, res) => { res.json({ user: req.user, permissions: userPermissions(req.user!.role) }); });
+api.get('/auth/me', (req, res) => { res.json({ user: req.user, permissions: req.user!.permissions }); });
 api.post('/auth/change-password', async (req, res) => {
   await changeOwnPassword(req.user!, req.body?.current_password, req.body?.new_password);
   res.json({ ok: true });
@@ -96,6 +97,15 @@ api.patch('/workflow/stages/:key', requirePermission('masters.manage'), async (r
   res.json(publicStageDefs());
 });
 api.get('/coordinator/queue', requirePermission('request.manage'), async (req, res) => { res.json(await coordinatorQueue(req.query, req.user!)); });
+
+// Access control itself is deliberately admin-only (not gated by an editable permission), so an
+// admin can never edit themselves out of the one screen that could undo the mistake.
+const requireAdmin = (req: Request, res: any, next: any) => (req.user!.role === 'admin' ? next() : res.status(403).json({ error: 'Admin only' }));
+api.get('/permissions', requireAdmin, (_req, res) => { res.json(publicRolePermissions()); });
+api.patch('/permissions/:role', requireAdmin, async (req, res) => {
+  await updateRolePermissions(String(req.params.role), req.body?.permissions);
+  res.json(publicRolePermissions());
+});
 
 // ---------------------------------------------------------------- job cards (/requests)
 api.get('/requests', async (req, res) => { res.json(await listRequests(req.query, req.user!)); });

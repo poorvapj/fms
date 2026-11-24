@@ -1,6 +1,7 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
+import { rolePermissions } from '../domain/permissions.ts';
 import { WORK_TYPES } from '../domain/workflow.ts';
 import { addAttachment } from './attachments.ts';
 import { masterNames } from './masters.ts';
@@ -296,7 +297,7 @@ async function siteVisitUser(requestId: number, slackUserId: string | undefined)
   const extra = !eng && slackUserId ? SITE_VISIT_NOTIFY_EXTRA.find((p) => p.slack_user_id === slackUserId) : null;
   // 'admin' (not 'engineer') so this isn't blocked by the assigned-site-engineer binding check —
   // the Yes/No DM goes to Kuldeep and Arun regardless of who's formally assigned on the record.
-  const user: AuthUser = { id: 0, username: 'slack', name: eng?.name ?? extra?.name ?? 'Slack', role: 'admin', engineer_id: eng?._id ?? null, must_change_password: false };
+  const user: AuthUser = { id: 0, username: 'slack', name: eng?.name ?? extra?.name ?? 'Slack', role: 'admin', engineer_id: eng?._id ?? null, must_change_password: false, permissions: rolePermissions('admin') };
   return { user, r };
 }
 
@@ -398,7 +399,7 @@ async function handleMaterialRequired(requestId: number, payload: any, required:
   const target = { channel: payload.channel?.id, ts: payload.message?.ts, slackUserId, responseUrl: payload.response_url };
   try {
     const r = await loadRequest(requestId);
-    const slackUser: AuthUser = { id: 0, username: 'slack', name: 'Slack', role: 'admin', engineer_id: null, must_change_password: false };
+    const slackUser: AuthUser = { id: 0, username: 'slack', name: 'Slack', role: 'admin', engineer_id: null, must_change_password: false, permissions: rolePermissions('admin') };
     if (required) {
       await col.requests().updateOne({ _id: requestId }, { $set: { requires_material: 1 } });
       await logEvent(requestId, 'comment', 'Material required (via Slack)', { stageKey: 'material', userName: 'Slack' });
@@ -481,7 +482,7 @@ async function handleClosureYes(requestId: number, payload: any) {
   if (opened.ok) {
     if (slackUserId) {
       const r = await loadRequest(requestId).catch(() => null);
-      if (r) await markAwaitingPhoto(slackUserId, requestId, 'closed', { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+      if (r) await markAwaitingPhoto(slackUserId, requestId, 'closed', { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false, permissions: rolePermissions('admin') });
     }
     return;
   }
@@ -505,7 +506,7 @@ async function handleClosureYesSubmit(payload: any) {
     const link = raw && /^https?:\/\//i.test(raw) ? raw : null;
     const note = raw && !link ? raw : null; // they typed something, but it wasn't a link — keep it as a note instead of mislabelling it a photo
     if (link) {
-      await addAttachment(requestId, { stage_key: 'closed', url: link }, { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false });
+      await addAttachment(requestId, { stage_key: 'closed', url: link }, { id: 0, username: 'slack', name: r.requester_name ?? 'Requester', role: 'admin', engineer_id: null, must_change_password: false, permissions: rolePermissions('admin') });
     }
     await logEvent(requestId, 'comment', `Requester confirmed work done${link ? ' (with photo)' : note ? ` — ${note}` : ''}`, { stageKey: 'closed', userName: r.requester_name ?? 'Requester' });
     const lines = [`✅ *Work done* confirmed by requester`, closureSummaryLines(r)];

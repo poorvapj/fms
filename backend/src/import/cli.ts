@@ -5,6 +5,7 @@ import type { AuthUser } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col, connect, disconnect } from '../db/mongo.ts';
 import { ensureBaseData } from '../db/seed.ts';
+import { rolePermissions } from '../domain/permissions.ts';
 import { commitImport, preview, saveUpload, validateImport } from './importService.ts';
 
 const args = process.argv.slice(2);
@@ -18,7 +19,7 @@ await ensureBaseData();
 console.log(`Environment: ${config.env.toUpperCase()}  (MongoDB database "${config.mongoDb}")`);
 const admin = await col.users().findOne({ role: 'admin', active: 1 }, { sort: { _id: 1 } });
 if (!admin) throw new Error('No active administrator found');
-const user: AuthUser = { id: admin._id, username: admin.username, name: admin.name, role: 'admin', engineer_id: null, must_change_password: false };
+const user: AuthUser = { id: admin._id, username: admin.username, name: admin.name, role: 'admin', engineer_id: null, must_change_password: false, permissions: rolePermissions('admin') };
 
 const up = await saveUpload({ buffer: readFileSync(file), originalname: path.basename(file), size: statSync(file).size }, user);
 const p = await preview(up.upload_id, user);

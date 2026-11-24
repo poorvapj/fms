@@ -28,8 +28,8 @@ export function isOverdue(r: Doc, now: string) {
 
 /** Row-level visibility for the signed-in user. */
 export function scopeFilter(user: AuthUser): Filter<Doc> {
-  if (can(user.role, 'request.view_all')) return {};
-  if (can(user.role, 'request.view_assigned')) {
+  if (can(user, 'request.view_all')) return {};
+  if (can(user, 'request.view_assigned')) {
     const e = user.engineer_id ?? -1;
     return { $or: [{ assigned_engineer_id: e }, { site_engineer_id: e }, { created_by: user.id }, { 'stages.engineer_id': e }] };
   }
@@ -159,8 +159,8 @@ export async function deleteRequest(requestId: number, user: AuthUser) {
 }
 
 export function canView(user: AuthUser, r: Doc): boolean {
-  if (can(user.role, 'request.view_all')) return true;
-  if (can(user.role, 'request.view_assigned') && user.engineer_id) {
+  if (can(user, 'request.view_all')) return true;
+  if (can(user, 'request.view_assigned') && user.engineer_id) {
     if (r.assigned_engineer_id === user.engineer_id || r.site_engineer_id === user.engineer_id) return true;
     if ((r.stages ?? []).some((s: Doc) => s.engineer_id === user.engineer_id)) return true;
   }
@@ -329,7 +329,7 @@ const EDITABLE: Record<string, 'text' | 'priority' | 'date' | 'property' | 'cate
 };
 
 export async function updateRequest(id: number, body: any, user: AuthUser) {
-  if (!can(user.role, 'request.edit')) throw forbidden();
+  if (!can(user, 'request.edit')) throw forbidden();
   const r = await loadRequest(id);
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   for (const [field, kind] of Object.entries(EDITABLE)) {

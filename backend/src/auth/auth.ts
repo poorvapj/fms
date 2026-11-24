@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
-import { can, ROLE_PERMISSIONS, type Permission, type Role } from '../domain/permissions.ts';
+import { ALL_PERMISSIONS, can, rolePermissions, type Permission, type Role } from '../domain/permissions.ts';
 import { logAudit } from '../services/audit.ts';
 import { nowLocal } from '../utils/dates.ts';
 import { HttpError, forbidden } from '../utils/http.ts';
@@ -15,6 +15,14 @@ export interface AuthUser {
   role: Role;
   engineer_id: number | null;
   must_change_password: boolean;
+  permissions: Permission[];
+}
+
+/** A user's own permission list, if an admin has customised it, overrides their role's defaults
+ *  entirely (not merged) — "Reset to role default" just clears the override. */
+export function effectivePermissions(role: Role, overrides: unknown): Permission[] {
+  if (Array.isArray(overrides)) return overrides.filter((p): p is Permission => ALL_PERMISSIONS.includes(p));
+  return rolePermissions(role);
 }
 
 declare module 'express-serve-static-core' {
@@ -38,7 +46,10 @@ export function validatePassword(pw: unknown): string {
 async function loadUser(id: number): Promise<AuthUser | null> {
   const u = await col.users().findOne({ _id: id }, { projection: { password_hash: 0 } });
   if (!u || !u.active) return null;
-  return { id: u._id, username: u.username, name: u.name, role: u.role, engineer_id: u.engineer_id ?? null, must_change_password: !!u.must_change_password };
+  return {
+    id: u._id, username: u.username, name: u.name, role: u.role, engineer_id: u.engineer_id ?? null,
+    must_change_password: !!u.must_change_password, permissions: effectivePermissions(u.role, u.permission_overrides),
+  };
 }
 
 // Simple in-memory login throttle: 10 failed attempts per username+ip per 15 minutes.
@@ -69,7 +80,10 @@ export async function login(username: string, password: string, ip: string, res:
     maxAge: config.sessionHours * 3600000,
     path: '/',
   });
-  return { id: row._id, username: row.username, name: row.name, role: row.role, engineer_id: row.engineer_id ?? null, must_change_password: !!row.must_change_password };
+  return {
+    id: row._id, username: row.username, name: row.name, role: row.role, engineer_id: row.engineer_id ?? null,
+    must_change_password: !!row.must_change_password, permissions: effectivePermissions(row.role, row.permission_overrides),
+  };
 }
 
 export function logout(res: Response) {
@@ -98,11 +112,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 export function requirePermission(...perms: Permission[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const u = req.user!;
-    if (!perms.some((p) => can(u.role, p))) return next(forbidden());
+    if (!perms.some((p) => can(u, p))) return next(forbidden());
     next();
   };
-}
-
-export function userPermissions(role: Role): Permission[] {
-  return ROLE_PERMISSIONS[role] ?? [];
 }

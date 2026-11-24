@@ -1,10 +1,10 @@
 import bcrypt from 'bcryptjs';
 import { hashPassword, validatePassword, type AuthUser } from '../auth/auth.ts';
 import { col, isDuplicateKey, nextId } from '../db/mongo.ts';
-import { ROLES } from '../domain/permissions.ts';
+import { ALL_PERMISSIONS, ROLES, type Permission } from '../domain/permissions.ts';
 import { logAudit } from './audit.ts';
 import { nowLocal } from '../utils/dates.ts';
-import { badRequest, bool, conflict, int, notFound, oneOf, requiredStr, str } from '../utils/http.ts';
+import { badRequest, bool, conflict, forbidden, int, notFound, oneOf, requiredStr, str } from '../utils/http.ts';
 
 const CI = { locale: 'en', strength: 2 } as const;
 
@@ -78,6 +78,14 @@ export async function updateUser(id: number, body: any, actor: AuthUser) {
     role, engineer_id: engineerId, active, updated_at: nowLocal(),
   };
   if (body.password) Object.assign(set, { password_hash: hashPassword(validatePassword(body.password)), must_change_password: 1 });
+  // Per-user permission overrides are sensitive enough to stay admin-only regardless of who else
+  // has 'users.manage' — this is the one thing even a coordinator with that grant cannot touch.
+  if (body.permission_overrides !== undefined) {
+    if (actor.role !== 'admin') throw forbidden();
+    set.permission_overrides = body.permission_overrides === null ? null
+      : Array.isArray(body.permission_overrides) ? Array.from(new Set(body.permission_overrides.filter((p: unknown): p is Permission => ALL_PERMISSIONS.includes(p as Permission))))
+      : (() => { throw badRequest('permission_overrides must be an array or null'); })();
+  }
   await col.users().updateOne({ _id: id }, { $set: set });
   logAudit('user_updated', `${actor.name} updated user "${u.username}"`, { user: actor, data: { target_user_id: id, target_username: u.username, changes: Object.keys(body) } }).catch(() => {});
 }

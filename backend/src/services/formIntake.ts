@@ -5,11 +5,12 @@
 // doesn't collect, like a reason/email/target date).
 import type { AuthUser } from '../auth/auth.ts';
 import { col } from '../db/mongo.ts';
+import { rolePermissions } from '../domain/permissions.ts';
 import { commitImport, saveUpload, validateImport } from '../import/importService.ts';
 import { notifyFormIntake, notifySiteVisitIfNeeded } from './slack.ts';
 import { HttpError } from '../utils/http.ts';
 
-const SYSTEM_USER: AuthUser = { id: 1, username: 'admin', name: 'Administrator', role: 'admin', engineer_id: null, must_change_password: false };
+const SYSTEM_USER: AuthUser = { id: 1, username: 'admin', name: 'Administrator', role: 'admin', engineer_id: null, must_change_password: false, permissions: rolePermissions('admin') };
 
 const LEGEND = [
   '01/10/2026 10:45:05,0.3333333333,10,18,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,',

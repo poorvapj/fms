@@ -9,7 +9,7 @@ import { useLoad, useUrlFilters } from '../lib/hooks';
 import type { StageDef } from '../lib/types';
 
 export function Masters() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const f = useUrlFilters({ tab: 'org' });
   const tabs = [
     { key: 'org', label: 'Organization & Work' },
@@ -19,6 +19,7 @@ export function Masters() {
     { key: 'escalation', label: 'Escalation Rules' },
     { key: 'reasons', label: 'Reasons' },
     ...(can('import.run') ? [{ key: 'import', label: 'Legacy Import' }] : []),
+    ...(user?.role === 'admin' ? [{ key: 'permissions', label: 'Permissions' }] : []),
   ];
   const t = f.values.tab;
   return (
@@ -32,6 +33,7 @@ export function Masters() {
       {t === 'escalation' && <EscalationRules />}
       {t === 'reasons' && <Reasons />}
       {t === 'import' && <ImportTab />}
+      {t === 'permissions' && user?.role === 'admin' && <Permissions />}
     </>
   );
 }
@@ -512,7 +514,10 @@ function ClosureCategories() {
   );
 }
 
-interface UserRow { id: number; username: string; name: string; email: string | null; phone: string | null; role: string; engineer_id: number | null; engineer_name: string | null; active: number; last_login_at: string | null }
+interface UserRow {
+  id: number; username: string; name: string; email: string | null; phone: string | null; role: string; engineer_id: number | null;
+  engineer_name: string | null; active: number; last_login_at: string | null; permission_overrides?: string[] | null;
+}
 
 function Users() {
   const meta = useMeta();
@@ -549,12 +554,19 @@ function Users() {
 
 function UserModal({ value, onClose, onSaved }: { value: Partial<UserRow>; onClose: () => void; onSaved: () => void }) {
   const meta = useMeta();
-  const [f, setF] = useState<Record<string, string | number | null | undefined>>({ ...value, password: '' });
+  const { user: me } = useAuth();
+  const isAdmin = me?.role === 'admin';
+  const { data: permData } = useLoad(() => (isAdmin ? api.get<PermissionsData>('/permissions') : Promise.resolve(null)), [isAdmin]);
+  const { permission_overrides, ...valueFields } = value;
+  const [f, setF] = useState<Record<string, string | number | null | undefined>>({ ...valueFields, password: '' });
+  const [customPerms, setCustomPerms] = useState<Set<string> | null>(permission_overrides != null ? new Set(permission_overrides) : null);
   const [error, setError] = useState<string | null>(null);
   const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const roleDefaults = () => new Set(permData?.roles.find((r) => r.role === f.role)?.permissions ?? []);
   const save = async () => {
     try {
-      const body = { ...f, engineer_id: f.engineer_id ? Number(f.engineer_id) : null, password: f.password || undefined };
+      const body: Record<string, unknown> = { ...f, engineer_id: f.engineer_id ? Number(f.engineer_id) : null, password: f.password || undefined };
+      if (isAdmin && value.id) body.permission_overrides = customPerms ? [...customPerms] : null;
       if (value.id) await api.patch(`/users/${value.id}`, body);
       else await api.post('/users', body);
       onSaved();
@@ -585,7 +597,124 @@ function UserModal({ value, onClose, onSaved }: { value: Partial<UserRow>; onClo
         </Field>
       </div>
       {value.id && <label className="check"><input type="checkbox" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked ? 1 : 0 })} />Active</label>}
+      {isAdmin && value.id && permData && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <label className="check">
+            <input
+              type="checkbox" checked={customPerms !== null}
+              onChange={(e) => setCustomPerms(e.target.checked ? roleDefaults() : null)}
+            />
+            Customize this user's permissions (overrides the {meta.roles.find((r) => r.key === f.role)?.label ?? f.role} role's defaults)
+          </label>
+          {customPerms !== null && (
+            <div className="row wrap" style={{ gap: '4px 16px' }}>
+              {permData.all_permissions.map((p) => (
+                <label key={p.key} className="check small">
+                  <input
+                    type="checkbox" checked={customPerms.has(p.key)}
+                    onChange={() => {
+                      const next = new Set(customPerms);
+                      if (next.has(p.key)) next.delete(p.key); else next.add(p.key);
+                      setCustomPerms(next);
+                    }}
+                  />
+                  {p.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <ErrorBox error={error} />
     </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ Permissions (admin only) */
+
+interface PermissionsData {
+  roles: { role: string; label: string; permissions: string[] }[];
+  all_permissions: { key: string; label: string }[];
+}
+
+function Permissions() {
+  const { data, error, loading, reload } = useLoad(() => api.get<PermissionsData>('/permissions'), []);
+  const [edited, setEdited] = useState<Record<string, Set<string>>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading && !data) return <Loading />;
+  if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
+  if (!data) return null;
+
+  const current = (role: string) => edited[role] ?? new Set(data.roles.find((r) => r.role === role)?.permissions ?? []);
+  const toggle = (role: string, perm: string) => {
+    const set = new Set(current(role));
+    if (set.has(perm)) set.delete(perm); else set.add(perm);
+    setEdited({ ...edited, [role]: set });
+  };
+  const dirty = (role: string) => {
+    const orig = data.roles.find((r) => r.role === role)?.permissions ?? [];
+    const now = current(role);
+    return orig.length !== now.size || orig.some((p) => !now.has(p));
+  };
+  const save = async (role: string) => {
+    setBusy(role);
+    setErr(null);
+    try {
+      await api.patch(`/permissions/${role}`, { permissions: [...current(role)] });
+      setEdited((e) => { const n = { ...e }; delete n[role]; return n; });
+      await reload();
+    } catch (e) {
+      setErr(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head"><h2>Role permissions</h2><span className="muted small">Who gets how much access — Administrator always keeps full access</span></div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Permission</th>
+              {data.roles.map((r) => <th key={r.role} style={{ textAlign: 'center' }}>{r.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {data.all_permissions.map((p) => (
+              <tr key={p.key}>
+                <td className="small">{p.label}</td>
+                {data.roles.map((r) => (
+                  <td key={r.role} style={{ textAlign: 'center' }}>
+                    <input
+                      type="checkbox" checked={r.role === 'admin' ? true : current(r.role).has(p.key)}
+                      disabled={r.role === 'admin'} onChange={() => toggle(r.role, p.key)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td />
+              {data.roles.map((r) => (
+                <td key={r.role} style={{ textAlign: 'center' }}>
+                  {r.role !== 'admin' && (
+                    <button className="btn sm primary" disabled={!dirty(r.role) || busy === r.role} onClick={() => save(r.role)}>
+                      {busy === r.role ? 'Saving…' : 'Save'}
+                    </button>
+                  )}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <ErrorBox error={err} />
+    </div>
   );
 }
