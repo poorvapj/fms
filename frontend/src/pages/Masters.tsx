@@ -580,7 +580,7 @@ function UserModal({ value, onClose, onSaved }: { value: Partial<UserRow>; onClo
         </Field>
         <Field label="Email"><input className="input" value={String(f.email ?? '')} onChange={set('email')} /></Field>
         <Field label="Phone"><input className="input" value={String(f.phone ?? '')} onChange={set('phone')} /></Field>
-        <Field label={value.id ? 'Reset password' : 'Temporary password'} required={!value.id} help="Min 8 characters with letters and numbers; user must change it at first login" full>
+        <Field label={value.id ? 'Reset password' : 'Temporary password'} required={!value.id} help="User must change it at first login" full>
           <input className="input" type="password" autoComplete="new-password" value={String(f.password ?? '')} onChange={set('password')} />
         </Field>
       </div>

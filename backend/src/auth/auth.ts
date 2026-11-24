@@ -31,9 +31,7 @@ export function hashPassword(pw: string) {
 
 export function validatePassword(pw: unknown): string {
   const s = typeof pw === 'string' ? pw : '';
-  if (s.length < 8 || !/[A-Za-z]/.test(s) || !/\d/.test(s)) {
-    throw new HttpError(400, 'Password must be at least 8 characters and contain letters and numbers');
-  }
+  if (!s) throw new HttpError(400, 'Password is required');
   return s;
 }
 
