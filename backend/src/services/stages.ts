@@ -189,9 +189,10 @@ export async function editStage(requestId: number, key: StageKey, body: any, use
   const note = requiredStr(body.reason, 'Reason for correction', 1000);
   const before = { status: stage.status, planned_at: stage.planned_at, actual_at: stage.actual_at };
   if (status === 'active') for (const s of r.stages) if (s !== stage && s.status === 'active') s.status = 'pending';
+  const decision = status === 'completed' ? (def.decision ? 'approved' : null) : status === 'rejected' ? 'rejected' : null;
   Object.assign(stage, {
     status, planned_at: planned, actual_at: status === 'completed' ? actual : null,
-    delay_minutes: status === 'completed' ? diffMinutes(actual, planned) : null, engineer_id: engineerId, comments,
+    delay_minutes: status === 'completed' ? diffMinutes(actual, planned) : null, engineer_id: engineerId, comments, decision,
     planned_inferred: planned !== stage.planned_at ? false : stage.planned_inferred,
     actual_inferred: actual !== stage.actual_at ? false : stage.actual_inferred,
     updated_by: user.id, updated_at: nowLocal(),
