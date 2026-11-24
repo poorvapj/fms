@@ -33,10 +33,16 @@ function Guard({ perm, children }: { perm: string; children: ReactNode }) {
   return can(perm) ? <>{children}</> : <div className="alert warn">You do not have access to this page.</div>;
 }
 
-/** Home: dashboard for managers, My Jobs for engineers and requesters. */
+/** Home: dashboard for managers, My Jobs for engineers and requesters — but only ever lands on a
+ *  page the signed-in user actually has access to (page.job_cards / page.my_jobs), so a role or
+ *  user whose page access was customised never gets bounced straight into a "no access" wall. */
 function Home() {
   const { can } = useAuth();
-  return can('dashboard.view') && can('request.view_all') ? <Dashboard /> : can('request.view_all') ? <Navigate to="/job-cards" replace /> : <Navigate to="/my-jobs" replace />;
+  if (can('dashboard.view') && can('request.view_all')) return <Dashboard />;
+  if (can('request.view_all') && can('page.job_cards')) return <Navigate to="/job-cards" replace />;
+  if (can('page.my_jobs')) return <Navigate to="/my-jobs" replace />;
+  if (can('page.job_cards')) return <Navigate to="/job-cards" replace />;
+  return <div className="alert warn">You do not have access to this page.</div>;
 }
 
 function LegacyRedirect() {
