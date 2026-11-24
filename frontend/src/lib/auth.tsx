@@ -5,6 +5,7 @@ import type { Meta, User } from './types';
 interface AuthState {
   user: User | null;
   permissions: string[];
+  impersonator: { id: number; name: string } | null;
   meta: Meta | null;
   loading: boolean;
   can: (perm: string) => boolean;
@@ -12,6 +13,8 @@ interface AuthState {
   logout: () => Promise<void>;
   refreshMeta: () => Promise<void>;
   setUser: (u: User) => void;
+  switchToUser: (id: number) => Promise<void>;
+  switchBack: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -19,6 +22,7 @@ const Ctx = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [impersonator, setImpersonator] = useState<{ id: number; name: string } | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,25 +30,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMeta(await api.get<Meta>('/meta'));
   }, []);
 
+  const applyMe = async () => {
+    const me = await api.get<{ user: User; permissions: string[]; impersonator: { id: number; name: string } | null }>('/auth/me');
+    setUser(me.user);
+    setPermissions(me.permissions);
+    setImpersonator(me.impersonator);
+    await refreshMeta();
+  };
+
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
       setPermissions([]);
+      setImpersonator(null);
     });
-    api.get<{ user: User; permissions: string[] }>('/auth/me')
-      .then(async (r) => {
-        setUser(r.user);
-        setPermissions(r.permissions);
-        await refreshMeta();
-      })
+    applyMe()
       .catch(() => undefined)
       .finally(() => setLoading(false));
-  }, [refreshMeta]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = async (username: string, password: string) => {
     const r = await api.post<{ user: User; permissions: string[] }>('/auth/login', { username, password });
     setUser(r.user);
     setPermissions(r.permissions);
+    setImpersonator(null);
     await refreshMeta();
   };
 
@@ -52,12 +62,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.post('/auth/logout').catch(() => undefined);
     setUser(null);
     setPermissions([]);
+    setImpersonator(null);
     setMeta(null);
+  };
+
+  const switchToUser = async (id: number) => {
+    await api.post(`/auth/impersonate/${id}`);
+    await applyMe();
+  };
+
+  const switchBack = async () => {
+    await api.post('/auth/stop-impersonating');
+    await applyMe();
   };
 
   const can = useCallback((p: string) => permissions.includes(p), [permissions]);
 
-  return <Ctx.Provider value={{ user, permissions, meta, loading, can, login, logout, refreshMeta, setUser }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ user, permissions, impersonator, meta, loading, can, login, logout, refreshMeta, setUser, switchToUser, switchBack }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth(): AuthState {

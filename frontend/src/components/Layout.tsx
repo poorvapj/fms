@@ -27,7 +27,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
 ];
 
 export function Layout() {
-  const { user, meta, can, logout } = useAuth();
+  const { user, meta, can, logout, impersonator, switchBack } = useAuth();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const nav = useNavigate();
@@ -71,6 +71,13 @@ export function Layout() {
           {can('request.create') && <button className="btn sm primary" onClick={() => nav('/job-cards?new=1')}><Icon name="plus" size={14} />New Job Card</button>}
         </header>
         <main className="content">
+          {impersonator && (
+            <div className="alert warn" style={{ marginBottom: 16 }}>
+              <Icon name="user" />
+              <div className="grow">Viewing as <b>{user?.name}</b> — signed in as {impersonator.name}.</div>
+              <button className="btn sm" onClick={switchBack}>Switch back</button>
+            </div>
+          )}
           {user?.must_change_password && location.pathname !== '/account' && (
             <div className="alert warn" style={{ marginBottom: 16 }}>
               <Icon name="alert" />

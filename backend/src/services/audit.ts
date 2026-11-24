@@ -2,7 +2,7 @@ import type { AuthUser } from '../auth/auth.ts';
 import { col, nextId } from '../db/mongo.ts';
 import { nowLocal } from '../utils/dates.ts';
 
-export type AuditType = 'login' | 'login_failed' | 'user_created' | 'user_updated' | 'password_changed' | 'request_deleted';
+export type AuditType = 'login' | 'login_failed' | 'user_created' | 'user_updated' | 'password_changed' | 'request_deleted' | 'impersonate_start' | 'impersonate_stop';
 
 export interface AuditOpts { user?: AuthUser | null; userName?: string; data?: unknown }
 

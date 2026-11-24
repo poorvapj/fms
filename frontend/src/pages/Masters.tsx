@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { Empty, ErrorBox, Field, Loading, Modal, PageHead, Tabs } from '../components/ui';
 import { api, errorText } from '../lib/api';
@@ -521,12 +521,19 @@ interface UserRow {
 
 function Users() {
   const meta = useMeta();
+  const { user: me, switchToUser } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api.get<UserRow[]>('/users'), []);
   const [edit, setEdit] = useState<Partial<UserRow> | null>(null);
+  const [switchErr, setSwitchErr] = useState<string | null>(null);
+  const nav = useNavigate();
+  const loginAs = async (u: UserRow) => {
+    setSwitchErr(null);
+    try { await switchToUser(u.id); nav('/'); } catch (e) { setSwitchErr(errorText(e)); }
+  };
   return (
     <div className="card">
       <div className="card-head"><h2>Users</h2><div className="actions"><button className="btn primary sm" onClick={() => setEdit({ role: 'engineer', active: 1 })}><Icon name="plus" size={13} />Add user</button></div></div>
-      <ErrorBox error={error} />
+      <ErrorBox error={error ?? switchErr} />
       {loading && !data ? <Loading /> : (
         <div className="table-wrap">
           <table className="table">
@@ -540,7 +547,12 @@ function Users() {
                   <td>{u.engineer_name ?? <span className="muted">—</span>}</td>
                   <td className="small">{fmtDateTime(u.last_login_at)}</td>
                   <td>{u.active ? <span className="badge closed">Active</span> : <span className="badge on_hold">Disabled</span>}</td>
-                  <td className="right"><button className="btn sm ghost" onClick={() => setEdit(u)}><Icon name="edit" size={13} />Edit</button></td>
+                  <td className="right row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                    {me?.role === 'admin' && u.role !== 'admin' && u.active === 1 && u.id !== me.id && (
+                      <button className="btn sm ghost" title="View the app as this user" onClick={() => loginAs(u)}><Icon name="users" size={13} />Login as</button>
+                    )}
+                    <button className="btn sm ghost" onClick={() => setEdit(u)}><Icon name="edit" size={13} />Edit</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

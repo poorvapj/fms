@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { login, logout, requireAuth, requirePermission } from '../auth/auth.ts';
+import { impersonate, loadUser, login, logout, requireAuth, requirePermission, stopImpersonating } from '../auth/auth.ts';
 import { config } from '../config.ts';
 import { col } from '../db/mongo.ts';
 import { ROLE_LABELS, ROLES } from '../domain/permissions.ts';
@@ -64,7 +64,12 @@ api.post('/auth/logout', (_req, res) => { logout(res); res.json({ ok: true }); }
 
 api.use(requireAuth);
 
-api.get('/auth/me', (req, res) => { res.json({ user: req.user, permissions: req.user!.permissions }); });
+api.get('/auth/me', async (req, res) => {
+  const impersonator = req.impersonatorId ? await loadUser(req.impersonatorId) : null;
+  res.json({ user: req.user, permissions: req.user!.permissions, impersonator: impersonator ? { id: impersonator.id, name: impersonator.name } : null });
+});
+api.post('/auth/impersonate/:id', async (req, res) => { res.json({ user: await impersonate(req.user!, req, res, id(req)) }); });
+api.post('/auth/stop-impersonating', async (req, res) => { res.json({ user: await stopImpersonating(req.user!, req.impersonatorId, res) }); });
 api.post('/auth/change-password', async (req, res) => {
   await changeOwnPassword(req.user!, req.body?.current_password, req.body?.new_password);
   res.json({ ok: true });

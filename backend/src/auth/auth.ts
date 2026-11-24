@@ -6,7 +6,7 @@ import { col } from '../db/mongo.ts';
 import { ALL_PERMISSIONS, can, rolePermissions, type Permission, type Role } from '../domain/permissions.ts';
 import { logAudit } from '../services/audit.ts';
 import { nowLocal } from '../utils/dates.ts';
-import { HttpError, forbidden } from '../utils/http.ts';
+import { HttpError, badRequest, forbidden, notFound } from '../utils/http.ts';
 
 export interface AuthUser {
   id: number;
@@ -28,6 +28,9 @@ export function effectivePermissions(role: Role, overrides: unknown): Permission
 declare module 'express-serve-static-core' {
   interface Request {
     user?: AuthUser;
+    /** Set while this session is an admin impersonating another user ("Switch user") — the
+     *  original admin's id, so they can be switched back to without re-entering a password. */
+    impersonatorId?: number | null;
   }
 }
 
@@ -43,13 +46,24 @@ export function validatePassword(pw: unknown): string {
   return s;
 }
 
-async function loadUser(id: number): Promise<AuthUser | null> {
+export async function loadUser(id: number): Promise<AuthUser | null> {
   const u = await col.users().findOne({ _id: id }, { projection: { password_hash: 0 } });
   if (!u || !u.active) return null;
   return {
     id: u._id, username: u.username, name: u.name, role: u.role, engineer_id: u.engineer_id ?? null,
     must_change_password: !!u.must_change_password, permissions: effectivePermissions(u.role, u.permission_overrides),
   };
+}
+
+function setSessionCookie(res: Response, userId: number, impersonatorId?: number) {
+  const token = jwt.sign({ sub: String(userId), ...(impersonatorId ? { imp: String(impersonatorId) } : {}) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
+  res.cookie(COOKIE, token, {
+    httpOnly: true,
+    sameSite: config.cookieSameSite,
+    secure: config.secureCookies || config.cookieSameSite === 'none',
+    maxAge: config.sessionHours * 3600000,
+    path: '/',
+  });
 }
 
 // Simple in-memory login throttle: 10 failed attempts per username+ip per 15 minutes.
@@ -72,14 +86,7 @@ export async function login(username: string, password: string, ip: string, res:
   // Not needed to complete sign-in — don't make the user wait on it.
   col.users().updateOne({ _id: row._id }, { $set: { last_login_at: nowLocal() } }).catch(() => {});
   logAudit('login', `${row.name} signed in`, { user: { id: row._id, name: row.name } as AuthUser, data: { ip } }).catch(() => {});
-  const token = jwt.sign({ sub: String(row._id) }, config.jwtSecret, { expiresIn: `${config.sessionHours}h` });
-  res.cookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: config.cookieSameSite,
-    secure: config.secureCookies || config.cookieSameSite === 'none',
-    maxAge: config.sessionHours * 3600000,
-    path: '/',
-  });
+  setSessionCookie(res, row._id);
   return {
     id: row._id, username: row.username, name: row.name, role: row.role, engineer_id: row.engineer_id ?? null,
     must_change_password: !!row.must_change_password, permissions: effectivePermissions(row.role, row.permission_overrides),
@@ -103,6 +110,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     const user = await loadUser(Number(payload.sub));
     if (!user) return next(new HttpError(401, 'Session expired'));
     req.user = user;
+    req.impersonatorId = (payload as jwt.JwtPayload & { imp?: string }).imp ? Number((payload as jwt.JwtPayload & { imp?: string }).imp) : null;
     next();
   } catch (err) {
     next(err);
@@ -115,4 +123,28 @@ export function requirePermission(...perms: Permission[]) {
     if (!perms.some((p) => can(u, p))) return next(forbidden());
     next();
   };
+}
+
+/** Admin "Switch user" — starts viewing the app as someone else without their password. Blocked
+ *  while already impersonating (switch back first) and for other admins, to keep this strictly
+ *  "see what a lower-privilege user sees" rather than a way to act as another admin. */
+export async function impersonate(admin: AuthUser, req: Request, res: Response, targetId: number) {
+  if (admin.role !== 'admin') throw forbidden();
+  if (req.impersonatorId) throw badRequest('Already viewing as another user — switch back first');
+  const target = await loadUser(targetId);
+  if (!target) throw notFound('User');
+  if (target.role === 'admin') throw badRequest('Cannot switch into another administrator');
+  setSessionCookie(res, target.id, admin.id);
+  logAudit('impersonate_start', `${admin.name} started viewing as "${target.username}"`, { user: admin, data: { target_user_id: target.id, target_username: target.username } }).catch(() => {});
+  return target;
+}
+
+/** Switch back to the original admin session. */
+export async function stopImpersonating(current: AuthUser, impersonatorId: number | null | undefined, res: Response) {
+  if (!impersonatorId) throw badRequest('Not currently viewing as another user');
+  const admin = await loadUser(impersonatorId);
+  if (!admin) throw notFound('Original admin user');
+  setSessionCookie(res, admin.id);
+  logAudit('impersonate_stop', `${admin.name} stopped viewing as "${current.username}"`, { user: admin, data: { target_user_id: current.id, target_username: current.username } }).catch(() => {});
+  return admin;
 }
