@@ -5,6 +5,14 @@ import {
 } from '../domain/permissions.ts';
 import { badRequest } from '../utils/http.ts';
 
+/** Permissions introduced after role_permissions docs already existed in the DB — $setOnInsert
+ *  only seeds a brand-new doc, so an existing role would otherwise silently lose access to
+ *  whatever a newly-added permission gates (e.g. a page that used to have no gate at all) until
+ *  an admin notices and re-grants it. Since these keys didn't exist before, nobody could have
+ *  deliberately revoked them, so it's safe to backfill them once into every existing role doc
+ *  that's missing them (and still within that role's shipped defaults). */
+const BACKFILL_PERMISSIONS: Permission[] = ['page.job_cards', 'page.my_jobs'];
+
 /** Ensure every role has a DB row (keeps admin edits) and load the in-memory cache. Call at startup. */
 export async function loadRolePermissions() {
   for (const role of ROLES) {
@@ -13,6 +21,8 @@ export async function loadRolePermissions() {
       { $setOnInsert: { permissions: DEFAULT_ROLE_PERMISSIONS[role] } },
       { upsert: true },
     );
+    const toAdd = BACKFILL_PERMISSIONS.filter((p) => DEFAULT_ROLE_PERMISSIONS[role].includes(p));
+    if (toAdd.length) await col.rolePermissions().updateOne({ _id: role }, { $addToSet: { permissions: { $each: toAdd } } });
   }
   const rows = await col.rolePermissions().find().toArray();
   const byRole = new Map(rows.map((r) => [r._id as Role, r.permissions as string[]]));

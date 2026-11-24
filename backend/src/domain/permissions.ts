@@ -28,11 +28,14 @@ export type Permission =
   | 'import.run'
   | 'reports.view'
   | 'dashboard.view'
-  | 'audit.view';
+  | 'audit.view'
+  | 'page.job_cards'
+  | 'page.my_jobs';
 
 export const ALL_PERMISSIONS: Permission[] = [
   'request.view_all', 'request.create', 'request.edit', 'request.manage', 'request.comment', 'stage.update',
   'stage.edit_history', 'approvals.view', 'masters.manage', 'users.manage', 'import.run', 'reports.view', 'dashboard.view', 'audit.view',
+  'page.job_cards', 'page.my_jobs',
 ];
 
 export const PERMISSION_LABELS: Record<Permission, string> = {
@@ -52,6 +55,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'reports.view': 'View reports',
   'dashboard.view': 'View dashboard',
   'audit.view': 'View audit log',
+  'page.job_cards': 'View Job Cards page',
+  'page.my_jobs': 'View My Jobs page',
 };
 
 /** The matrix as shipped — used to seed the DB-backed version (role_permissions service) the
@@ -59,12 +64,12 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: ALL_PERMISSIONS,
   coordinator: ALL_PERMISSIONS.filter((p) => p !== 'users.manage' && p !== 'stage.edit_history' && p !== 'audit.view'),
-  project_head: ['request.view_all', 'request.create', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],
-  approver: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],
-  store: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view'],
-  engineer: ['request.view_assigned', 'request.create', 'request.comment', 'stage.update', 'dashboard.view'],
-  requester: ['request.view_own', 'request.create', 'request.comment'],
-  viewer: ['request.view_all', 'reports.view', 'dashboard.view'],
+  project_head: ['request.view_all', 'request.create', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view', 'page.job_cards', 'page.my_jobs'],
+  approver: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view', 'page.job_cards', 'page.my_jobs'],
+  store: ['request.view_all', 'request.comment', 'stage.update', 'approvals.view', 'reports.view', 'dashboard.view', 'page.job_cards', 'page.my_jobs'],
+  engineer: ['request.view_assigned', 'request.create', 'request.comment', 'stage.update', 'dashboard.view', 'page.job_cards', 'page.my_jobs'],
+  requester: ['request.view_own', 'request.create', 'request.comment', 'page.job_cards', 'page.my_jobs'],
+  viewer: ['request.view_all', 'reports.view', 'dashboard.view', 'page.job_cards', 'page.my_jobs'],
 };
 
 let cache: Record<Role, Permission[]> = DEFAULT_ROLE_PERMISSIONS;

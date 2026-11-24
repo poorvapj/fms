@@ -10,8 +10,8 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     title: 'Operations',
     items: [
       { to: '/', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view', end: true },
-      { to: '/job-cards', label: 'Job Cards', icon: 'file' },
-      { to: '/my-jobs', label: 'My Jobs', icon: 'list' },
+      { to: '/job-cards', label: 'Job Cards', icon: 'file', perm: 'page.job_cards' },
+      { to: '/my-jobs', label: 'My Jobs', icon: 'list', perm: 'page.my_jobs' },
       { to: '/coordinator', label: 'Process Coordinator', icon: 'alert', perm: 'request.manage' },
     ],
   },
@@ -19,9 +19,9 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Admin',
     items: [
-      { to: '/masters', label: 'Masters', icon: 'building', perm: 'masters.manage', adminOnly: true },
+      { to: '/masters', label: 'Masters', icon: 'building', perm: 'masters.manage' },
       { to: '/users', label: 'Users', icon: 'users', perm: 'users.manage' },
-      { to: '/audit-log', label: 'Audit Log', icon: 'list', perm: 'audit.view', adminOnly: true },
+      { to: '/audit-log', label: 'Audit Log', icon: 'list', perm: 'audit.view' },
     ],
   },
 ];

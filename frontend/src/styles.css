@@ -191,6 +191,15 @@ textarea.input { height: auto; min-height: 84px; padding: 8px 10px; resize: vert
 .filters .f.search { min-width: 220px; flex: 1; }
 .filters .select, .filters .input { height: 34px; }
 
+/* compact mobile filter bar: search + a single icon button that opens the full filters in a modal */
+.filters-compact { display: none; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.filters-compact .input { flex: 1; height: 38px; }
+.filter-icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); flex-shrink: 0; }
+.filter-icon-btn.active { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-ring); }
+.filter-icon-btn .dot { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.filters-modal .f { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+.filters-modal .f label { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; }
 table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -421,6 +430,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .tl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters .f { min-width: calc(50% - 4px); flex: 1; }
   .dl { grid-template-columns: 110px 1fr; }
+}
+@media (max-width: 640px) {
+  .filters-bar .filters { display: none; }
+  .filters-compact { display: flex !important; }
 }
 
 /* required-question errors */

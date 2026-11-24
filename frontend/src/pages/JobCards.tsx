@@ -50,6 +50,7 @@ export function JobCards() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(v.q);
   const [more, setMore] = useState(['engineer_id', 'priority', 'from', 'to', 'source'].some((k) => v[k as keyof typeof v]));
+  const [showFilterModal, setShowFilterModal] = useState(false);
   useEffect(() => setQ(v.q), [v.q]);
   useEffect(() => {
     const t = setTimeout(() => q !== v.q && f.set({ q }), 350);
@@ -101,6 +102,16 @@ export function JobCards() {
         </div>
       )}
       <div className="card" style={{ marginBottom: 16 }}>
+        <div className="filters-compact">
+          <input className="input" placeholder="Search job card, property no. or description" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button
+            className={`filter-icon-btn${Object.entries(v).some(([k, val]) => !['page', 'sort', 'dir', 'q'].includes(k) && val) ? ' active' : ''}`}
+            onClick={() => setShowFilterModal(true)} title="Filters"
+          >
+            <Icon name="sliders" size={16} />
+          </button>
+        </div>
+        <div className="filters-bar">
         <div className="filters" style={{ borderRadius: 'var(--radius-lg)', borderBottom: more ? undefined : 0 }}>
           <div className="f search">
             <label htmlFor="f-q" className="sr-only">Search</label>
@@ -131,7 +142,33 @@ export function JobCards() {
             </div>
           </div>
         )}
+        </div>
       </div>
+      {showFilterModal && (
+        <Modal title="Filters" onClose={() => setShowFilterModal(false)} footer={<button className="btn primary" onClick={() => setShowFilterModal(false)}>Done</button>}>
+          <div className="filters-modal">
+            <div className="f">
+              <label htmlFor="fm-view">View</label>
+              <select id="fm-view" className="select" value={v.view} onChange={(e) => f.set({ view: e.target.value })}>
+                {VIEWS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+              </select>
+            </div>
+            {sel('property_id', 'Project', meta.properties.map((p) => ({ value: p.id, label: p.name })))}
+            {sel('status', 'Status', meta.statuses.map((s) => ({ value: s.key, label: s.label })))}
+            {sel('category_id', 'Category', meta.categories.map((c) => ({ value: c.id, label: c.name })))}
+            {sel('stage', 'Next Action', meta.stages.filter((s) => s.key !== 'created').map((s) => ({ value: s.key, label: s.name })))}
+            {sel('engineer_id', 'Engineer', meta.engineers.map((e) => ({ value: e.id, label: e.name })))}
+            {sel('priority', 'Priority', meta.priorities.map((p) => ({ value: p, label: cap(p) })))}
+            {sel('source', 'Source', Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label })))}
+            <div className="f"><label>Raised from</label><input type="date" className="input" value={v.from} onChange={(e) => f.set({ from: e.target.value })} /></div>
+            <div className="f"><label>Raised to</label><input type="date" className="input" value={v.to} onChange={(e) => f.set({ to: e.target.value })} /></div>
+            <label className="check"><input type="checkbox" checked={v.overdue === '1'} onChange={(e) => f.set({ overdue: e.target.checked ? '1' : '' })} />Overdue only</label>
+          </div>
+          {Object.entries(v).some(([k, val]) => !['page', 'sort', 'dir'].includes(k) && val) && (
+            <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => { f.reset(); setShowFilterModal(false); }}>Clear all filters</button>
+          )}
+        </Modal>
+      )}
       <div className="card">
         <ErrorBox error={error} onRetry={reload} />
         {loading && !data ? <Loading /> : data && (

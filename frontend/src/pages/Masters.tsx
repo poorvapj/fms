@@ -554,19 +554,13 @@ function Users() {
 
 function UserModal({ value, onClose, onSaved }: { value: Partial<UserRow>; onClose: () => void; onSaved: () => void }) {
   const meta = useMeta();
-  const { user: me } = useAuth();
-  const isAdmin = me?.role === 'admin';
-  const { data: permData } = useLoad(() => (isAdmin ? api.get<PermissionsData>('/permissions') : Promise.resolve(null)), [isAdmin]);
-  const { permission_overrides, ...valueFields } = value;
+  const { permission_overrides: _permission_overrides, ...valueFields } = value;
   const [f, setF] = useState<Record<string, string | number | null | undefined>>({ ...valueFields, password: '' });
-  const [customPerms, setCustomPerms] = useState<Set<string> | null>(permission_overrides != null ? new Set(permission_overrides) : null);
   const [error, setError] = useState<string | null>(null);
   const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  const roleDefaults = () => new Set(permData?.roles.find((r) => r.role === f.role)?.permissions ?? []);
   const save = async () => {
     try {
       const body: Record<string, unknown> = { ...f, engineer_id: f.engineer_id ? Number(f.engineer_id) : null, password: f.password || undefined };
-      if (isAdmin && value.id) body.permission_overrides = customPerms ? [...customPerms] : null;
       if (value.id) await api.patch(`/users/${value.id}`, body);
       else await api.post('/users', body);
       onSaved();
@@ -597,34 +591,7 @@ function UserModal({ value, onClose, onSaved }: { value: Partial<UserRow>; onClo
         </Field>
       </div>
       {value.id && <label className="check"><input type="checkbox" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked ? 1 : 0 })} />Active</label>}
-      {isAdmin && value.id && permData && (
-        <div className="stack" style={{ marginTop: 10 }}>
-          <label className="check">
-            <input
-              type="checkbox" checked={customPerms !== null}
-              onChange={(e) => setCustomPerms(e.target.checked ? roleDefaults() : null)}
-            />
-            Customize this user's permissions (overrides the {meta.roles.find((r) => r.key === f.role)?.label ?? f.role} role's defaults)
-          </label>
-          {customPerms !== null && (
-            <div className="row wrap" style={{ gap: '4px 16px' }}>
-              {permData.all_permissions.map((p) => (
-                <label key={p.key} className="check small">
-                  <input
-                    type="checkbox" checked={customPerms.has(p.key)}
-                    onChange={() => {
-                      const next = new Set(customPerms);
-                      if (next.has(p.key)) next.delete(p.key); else next.add(p.key);
-                      setCustomPerms(next);
-                    }}
-                  />
-                  {p.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {value.id && <div className="muted small" style={{ marginTop: 6 }}>Per-user permission overrides are set from Masters → Permissions → User-wise.</div>}
       <ErrorBox error={error} />
     </Modal>
   );
@@ -637,83 +604,161 @@ interface PermissionsData {
   all_permissions: { key: string; label: string }[];
 }
 
+/** Groups the flat permission list into cards, purely for display — mirrors how the permissions
+ *  are organised conceptually (job cards, workflow, admin, …). */
+const PERMISSION_GROUPS: { label: string; keys: string[] }[] = [
+  { label: 'Pages', keys: ['dashboard.view', 'page.job_cards', 'page.my_jobs', 'reports.view', 'masters.manage', 'users.manage', 'audit.view'] },
+  { label: 'Job Cards', keys: ['request.view_all', 'request.create', 'request.edit', 'request.manage', 'request.comment'] },
+  { label: 'Workflow Stages', keys: ['stage.update', 'stage.edit_history'] },
+  { label: 'Approvals', keys: ['approvals.view'] },
+  { label: 'Administration', keys: ['import.run'] },
+];
+
+function PermissionCards({ allPermissions, current, onToggle, disabled }: {
+  allPermissions: { key: string; label: string }[]; current: Set<string>; onToggle: (key: string) => void; disabled?: boolean;
+}) {
+  const byKey = new Map(allPermissions.map((p) => [p.key, p]));
+  return (
+    <div className="row wrap" style={{ gap: 12, alignItems: 'stretch' }}>
+      {PERMISSION_GROUPS.map((g) => {
+        const perms = g.keys.map((k) => byKey.get(k)).filter((p): p is { key: string; label: string } => !!p);
+        if (!perms.length) return null;
+        return (
+          <div key={g.label} className="card" style={{ minWidth: 260, flex: '1 1 260px', margin: 0 }}>
+            <div className="card-head"><h3 style={{ fontSize: 14 }}>{g.label}</h3><span className="muted small">{perms.length} node{perms.length > 1 ? 's' : ''}</span></div>
+            <div className="card-body stack" style={{ gap: 8 }}>
+              {perms.map((p) => (
+                <label key={p.key} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <span>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{p.label}</div>
+                    <div className="muted small mono">{p.key}</div>
+                  </span>
+                  <input type="checkbox" checked={current.has(p.key)} disabled={disabled} onChange={() => onToggle(p.key)} />
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Permissions() {
+  const [mode, setMode] = useState<'role' | 'user'>('role');
   const { data, error, loading, reload } = useLoad(() => api.get<PermissionsData>('/permissions'), []);
+  const { data: users, reload: reloadUsers } = useLoad(() => api.get<UserRow[]>('/users'), []);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [edited, setEdited] = useState<Record<string, Set<string>>>({});
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return null;
 
-  const current = (role: string) => edited[role] ?? new Set(data.roles.find((r) => r.role === role)?.permissions ?? []);
-  const toggle = (role: string, perm: string) => {
-    const set = new Set(current(role));
+  const roles = data.roles.filter((r) => r.role !== 'admin');
+  const role = selectedRole ?? roles[0]?.role ?? null;
+  const selectableUsers = (users ?? []).filter((u) => u.role !== 'admin');
+  const userId = selectedUserId ?? selectableUsers[0]?.id ?? null;
+  const user = selectableUsers.find((u) => u.id === userId) ?? null;
+
+  const baseline = (): string[] => {
+    if (mode === 'role') return data.roles.find((r) => r.role === role)?.permissions ?? [];
+    if (!user) return [];
+    return user.permission_overrides != null ? user.permission_overrides : (data.roles.find((r) => r.role === user.role)?.permissions ?? []);
+  };
+  const key = mode === 'role' ? `role:${role}` : `user:${userId}`;
+  const current = edited[key] ?? new Set(baseline());
+  const toggle = (perm: string) => {
+    const set = new Set(current);
     if (set.has(perm)) set.delete(perm); else set.add(perm);
-    setEdited({ ...edited, [role]: set });
+    setEdited({ ...edited, [key]: set });
   };
-  const dirty = (role: string) => {
-    const orig = data.roles.find((r) => r.role === role)?.permissions ?? [];
-    const now = current(role);
-    return orig.length !== now.size || orig.some((p) => !now.has(p));
-  };
-  const save = async (role: string) => {
-    setBusy(role);
+  const orig = baseline();
+  const dirty = orig.length !== current.size || orig.some((p) => !current.has(p));
+  const isCustomized = mode === 'user' && user?.permission_overrides != null;
+
+  const save = async () => {
+    setBusy(true);
     setErr(null);
     try {
-      await api.patch(`/permissions/${role}`, { permissions: [...current(role)] });
-      setEdited((e) => { const n = { ...e }; delete n[role]; return n; });
-      await reload();
+      if (mode === 'role' && role) {
+        await api.patch(`/permissions/${role}`, { permissions: [...current] });
+        await reload();
+      } else if (mode === 'user' && userId) {
+        await api.patch(`/users/${userId}`, { permission_overrides: [...current] });
+        await reloadUsers();
+      }
+      setEdited((e) => { const n = { ...e }; delete n[key]; return n; });
     } catch (e) {
       setErr(errorText(e));
     } finally {
-      setBusy(null);
+      setBusy(false);
+    }
+  };
+  const resetToRoleDefault = async () => {
+    if (!userId) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.patch(`/users/${userId}`, { permission_overrides: null });
+      await reloadUsers();
+      setEdited((e) => { const n = { ...e }; delete n[key]; return n; });
+    } catch (e) {
+      setErr(errorText(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="card">
-      <div className="card-head"><h2>Role permissions</h2><span className="muted small">Who gets how much access — Administrator always keeps full access</span></div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Permission</th>
-              {data.roles.map((r) => <th key={r.role} style={{ textAlign: 'center' }}>{r.label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {data.all_permissions.map((p) => (
-              <tr key={p.key}>
-                <td className="small">{p.label}</td>
-                {data.roles.map((r) => (
-                  <td key={r.role} style={{ textAlign: 'center' }}>
-                    <input
-                      type="checkbox" checked={r.role === 'admin' ? true : current(r.role).has(p.key)}
-                      disabled={r.role === 'admin'} onChange={() => toggle(r.role, p.key)}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td />
-              {data.roles.map((r) => (
-                <td key={r.role} style={{ textAlign: 'center' }}>
-                  {r.role !== 'admin' && (
-                    <button className="btn sm primary" disabled={!dirty(r.role) || busy === r.role} onClick={() => save(r.role)}>
-                      {busy === r.role ? 'Saving…' : 'Save'}
-                    </button>
-                  )}
-                </td>
-              ))}
-            </tr>
-          </tfoot>
-        </table>
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <h2>Permission Matrix</h2>
+            <div className="muted small">
+              {mode === 'role' ? 'Role defaults — every user with this role gets this access' : "Override one user's access directly — replaces their role's defaults for that login"}
+            </div>
+          </div>
+          <div className="row" style={{ gap: 4 }}>
+            <button className={`btn sm ${mode === 'user' ? 'primary' : 'ghost'}`} onClick={() => setMode('user')}>User-wise</button>
+            <button className={`btn sm ${mode === 'role' ? 'primary' : 'ghost'}`} onClick={() => setMode('role')}>Role-wise</button>
+          </div>
+        </div>
+        <div className="card-body row wrap" style={{ alignItems: 'flex-end', gap: 16 }}>
+          {mode === 'role' ? (
+            <Field label="Role">
+              <select className="select" value={role ?? ''} onChange={(e) => setSelectedRole(e.target.value)}>
+                {roles.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <Field label="User">
+              <select className="select" value={userId ?? ''} onChange={(e) => setSelectedUserId(Number(e.target.value))}>
+                {selectableUsers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
+              </select>
+            </Field>
+          )}
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div className="muted small">ASSIGNED PERMISSIONS</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{current.size}</div>
+          </div>
+          {mode === 'user' && isCustomized && <button className="btn sm ghost" disabled={busy} onClick={resetToRoleDefault}>Reset to role default</button>}
+          <button className="btn sm primary" disabled={!dirty || busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+        {mode === 'user' && user && (
+          <div className="card-body" style={{ paddingTop: 0 }}>
+            <span className="muted small">
+              Role: {data.roles.find((r) => r.role === user.role)?.label ?? user.role}
+              {isCustomized ? ' — this user has a custom override' : ' — currently using role defaults'}
+            </span>
+          </div>
+        )}
       </div>
+      <PermissionCards allPermissions={data.all_permissions} current={current} onToggle={toggle} />
       <ErrorBox error={err} />
     </div>
   );

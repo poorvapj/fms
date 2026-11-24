@@ -28,9 +28,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Guard({ perm, children, adminOnly }: { perm: string; children: ReactNode; adminOnly?: boolean }) {
-  const { can, user } = useAuth();
-  if (adminOnly && user?.role !== 'admin') return <div className="alert warn">This page is available to administrators only.</div>;
+function Guard({ perm, children }: { perm: string; children: ReactNode }) {
+  const { can } = useAuth();
   return can(perm) ? <>{children}</> : <div className="alert warn">You do not have access to this page.</div>;
 }
 
@@ -55,16 +54,16 @@ function App() {
       <Route path="/job-cards/:id/print" element={<RequireAuth><JobCardPrint /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Home />} />
-        <Route path="job-cards" element={<JobCards />} />
+        <Route path="job-cards" element={<Guard perm="page.job_cards"><JobCards /></Guard>} />
         <Route path="job-cards/:id" element={<RequestDetail />} />
         <Route path="requests/:id" element={<LegacyRedirect />} />
         <Route path="coordinator" element={<Guard perm="request.manage"><ProcessCoordinator /></Guard>} />
         <Route path="users" element={<Guard perm="users.manage"><UsersPage /></Guard>} />
-        <Route path="audit-log" element={<Guard perm="audit.view" adminOnly><AuditLog /></Guard>} />
-        <Route path="my-jobs" element={<MyJobs />} />
+        <Route path="audit-log" element={<Guard perm="audit.view"><AuditLog /></Guard>} />
+        <Route path="my-jobs" element={<Guard perm="page.my_jobs"><MyJobs /></Guard>} />
         <Route path="reports" element={<Guard perm="reports.view"><Reports /></Guard>} />
         <Route path="reports/:key" element={<Guard perm="reports.view"><Reports /></Guard>} />
-        <Route path="masters" element={<Guard perm="masters.manage" adminOnly><Masters /></Guard>} />
+        <Route path="masters" element={<Guard perm="masters.manage"><Masters /></Guard>} />
         <Route path="import" element={<Guard perm="import.run"><ImportWizard /></Guard>} />
         <Route path="import/history" element={<Guard perm="import.run"><ImportHistory /></Guard>} />
         <Route path="import/:id" element={<Guard perm="import.run"><ImportBatch /></Guard>} />
