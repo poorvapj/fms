@@ -3,7 +3,7 @@ import { col, type Doc } from '../db/mongo.ts';
 import { diffMinutes, nowLocal, toMs } from '../utils/dates.ts';
 import { notFound } from '../utils/http.ts';
 import { masterNames } from './masters.ts';
-import { buildFilter, isOverdue, LIVE_STATUSES } from './requests.ts';
+import { buildFilter, isOverdue, latestStageRemark, LIVE_STATUSES } from './requests.ts';
 import { stageDefs, stageName } from './stageDefs.ts';
 
 export type ColType = 'text' | 'number' | 'datetime' | 'date' | 'hours' | 'percent' | 'request' | 'status' | 'stage';
@@ -215,7 +215,7 @@ async function legacyRows(list: Doc[], names: Names): Promise<Record<string, unk
       remark = remark ? `${remark} (FMS ref ${ref})` : `(FMS ref ${ref})`;
     }
     if (!remark && !['closed', 'cancelled'].includes(r.status) && r.current_stage_key) {
-      remark = `Pending at ${stageName(r.current_stage_key)}`;
+      remark = latestStageRemark(r) || `Pending at ${stageName(r.current_stage_key)}`;
     }
     return {
       id: r._id, row_no: i + 1, time: ddmmyyyyHms(r.requested_at), site: names.properties.get(r.property_id) ?? '',

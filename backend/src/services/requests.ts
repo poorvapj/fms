@@ -79,9 +79,20 @@ export const LIST_PROJECTION = {
   request_no: 1, source: 1, title: 1, priority: 1, status: 1, requested_at: 1, target_date: 1, location_detail: 1, property_no: 1,
   work_type: 1, current_stage_key: 1, current_stage_planned_at: 1, completed_at: 1, closed_at: 1, hold_reason: 1, property_id: 1,
   category_id: 1, assigned_engineer_id: 1, site_engineer_id: 1, held_at: 1, pc_remark: 1, closure_note: 1, closure_category: 1, import_row_no: 1,
+  stages: 1,
 };
 
 type Names = Awaited<ReturnType<typeof masterNames>>;
+
+/** Whatever remark was left most recently on this job card's own stage history — the active
+ *  stage's own remark if it has one, otherwise the last completed/skipped stage's, newest first.
+ *  Falls back through the chain even if the current stage was never given a remark of its own. */
+export function latestStageRemark(r: Doc): string | null {
+  const withRemarks = (r.stages ?? []).filter((s: Doc) => s.comments) as Doc[];
+  if (!withRemarks.length) return null;
+  withRemarks.sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')) || b.seq - a.seq);
+  return withRemarks[0].comments;
+}
 
 export function listRow(r: Doc, names: Names, now: string) {
   const overdue = isOverdue(r, now);
@@ -90,6 +101,7 @@ export function listRow(r: Doc, names: Names, now: string) {
     requested_at: r.requested_at, target_date: r.target_date ?? null, location_detail: r.location_detail ?? null,
     property_no: r.property_no ?? null, work_type: r.work_type ?? null, current_stage_key: r.current_stage_key ?? null,
     current_stage_name: stageName(r.current_stage_key), current_stage_planned_at: r.current_stage_planned_at ?? null,
+    current_stage_comments: latestStageRemark(r),
     completed_at: r.completed_at ?? null, closed_at: r.closed_at ?? null, hold_reason: r.hold_reason ?? null,
     property_id: r.property_id, property_name: names.properties.get(r.property_id) ?? '—',
     category_id: r.category_id, category_name: names.categories.get(r.category_id) ?? '—',

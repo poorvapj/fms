@@ -120,7 +120,7 @@ export function JobCardTable({ rows, sort, onSort, emptyText = 'No job cards mat
                 </td>
                 {!compact && (
                   <td className="small" style={tone ? { color: tone.text, fontWeight: 600 } : undefined}>
-                    {displayRemark(r) || (closed(r) ? <span className="muted">—</span> : r.current_stage_name ? `Pending at ${r.current_stage_name}` : <span className="muted">—</span>)}
+                    {displayRemark(r) || (closed(r) ? <span className="muted">—</span> : r.current_stage_comments ? r.current_stage_comments : r.current_stage_name ? `Pending at ${r.current_stage_name}` : <span className="muted">—</span>)}
                   </td>
                 )}
                 {isAdmin && (

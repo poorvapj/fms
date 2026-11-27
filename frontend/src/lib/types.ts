@@ -58,6 +58,7 @@ export interface RequestRow {
   target_date: string | null;
   current_stage_key: string | null;
   current_stage_name: string | null;
+  current_stage_comments: string | null;
   current_stage_planned_at: string | null;
   completed_at: string | null;
   property_name: string;
