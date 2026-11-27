@@ -1,5 +1,6 @@
 import type { AuthUser } from '../auth/auth.ts';
 import { col, type Doc } from '../db/mongo.ts';
+import { ROLE_LABELS } from '../domain/permissions.ts';
 import { diffMinutes, nowLocal, toMs } from '../utils/dates.ts';
 import { notFound } from '../utils/http.ts';
 import { masterNames } from './masters.ts';
@@ -7,7 +8,7 @@ import { buildFilter, isOverdue, latestStageRemark, LIVE_STATUSES } from './requ
 import { stageDefs, stageName } from './stageDefs.ts';
 
 export type ColType = 'text' | 'number' | 'datetime' | 'date' | 'hours' | 'percent' | 'request' | 'status' | 'stage';
-export interface Column { key: string; label: string; type?: ColType }
+export interface Column { key: string; label: string; type?: ColType; group?: string }
 export interface Section { title: string; columns: Column[]; rows: Record<string, unknown>[] }
 export interface Report { key: string; title: string; description: string; date_basis: string; sections: Section[] }
 
@@ -17,6 +18,7 @@ export const REPORTS: { key: string; title: string; description: string }[] = [
   { key: 'project_performance', title: 'Project Performance', description: 'Closed jobs, average resolution time and reopen count per project' },
   { key: 'delay_responsibility', title: 'Delay Responsibility', description: 'Which party (engineer, approval, material, vendor, management) owns each job’s largest delay' },
   { key: 'reopened', title: 'Reopened Jobs', description: 'Jobs that were closed and later reopened, with the latest reopen reason' },
+  { key: 'user_performance', title: 'User-wise Performance', description: 'Stages each user has completed, skipped or rejected — on-time rate and average delay' },
 ];
 
 function ddmmyyyyHms(v: string | null | undefined): string {
@@ -156,6 +158,61 @@ export async function runReport(key: string, query: Record<string, any>, user: A
       sections.push({
         title: `Reopened jobs (${out.length})`,
         columns: [...LIST_COLUMNS, { key: 'status', label: 'Status', type: 'status' }, { key: 'reopened_at', label: 'Reopened at', type: 'datetime' }, { key: 'reopen_reason', label: 'Reopen reason' }],
+        rows: out,
+      });
+      break;
+    }
+    case 'user_performance': {
+      const users = await col.users().find({}, { projection: { name: 1, role: 1 } }).toArray();
+      const userById = new Map(users.map((u) => [u._id as number, u]));
+      type Agg = { completed: number; onTime: number; late: number; skipped: number; rejected: number; delaySum: number; tatSum: number; tatCount: number };
+      const agg = new Map<number, Agg>();
+      const get = (id: number): Agg => {
+        if (!agg.has(id)) agg.set(id, { completed: 0, onTime: 0, late: 0, skipped: 0, rejected: 0, delaySum: 0, tatSum: 0, tatCount: 0 });
+        return agg.get(id)!;
+      };
+      for (const r of rows) {
+        for (const s of r.stages as (StageRow & { responsible_user_id?: number | null; status: string })[]) {
+          const uid = s.responsible_user_id;
+          if (!uid || !userById.has(uid)) continue;
+          const a = get(uid);
+          if (s.status === 'completed') {
+            a.completed++;
+            const delay = s.delay_minutes ?? 0;
+            if (delay > 0) { a.late++; a.delaySum += delay; } else a.onTime++;
+            if (s.actual_at) { a.tatSum += diffMinutes(s.actual_at, r.requested_at) ?? 0; a.tatCount++; }
+          } else if (s.status === 'skipped') a.skipped++;
+          else if (s.status === 'rejected') a.rejected++;
+        }
+      }
+      const fmtMins = (m: number): string | null => {
+        if (!m) return null;
+        const h = Math.floor(m / 60), mm = Math.round(m % 60);
+        const d = Math.floor(h / 24), hh = h % 24;
+        return d ? `${d}d ${hh}h` : h ? `${hh}h ${mm}m` : `${mm}m`;
+      };
+      const out = [...agg.entries()].map(([uid, a]) => {
+        const u = userById.get(uid)!;
+        const handled = a.completed + a.skipped + a.rejected;
+        return {
+          id: uid, user_name: u.name, role_name: ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] ?? u.role,
+          handled, completed: a.completed, skipped: a.skipped, rejected: a.rejected,
+          on_time: a.onTime, late: a.late,
+          avg_delay: a.late ? fmtMins(a.delaySum / a.late) : null,
+          avg_tat: a.tatCount ? fmtMins(a.tatSum / a.tatCount) : null,
+          on_time_pct: pct(a.onTime, a.completed),
+        };
+      }).sort((a, b) => b.handled - a.handled);
+      sections.push({
+        title: 'User-wise performance',
+        columns: [
+          { key: 'user_name', label: 'User', group: 'User' }, { key: 'role_name', label: 'Role', group: 'User' },
+          { key: 'handled', label: 'Handled', type: 'number', group: 'Work' }, { key: 'completed', label: 'Completed', type: 'number', group: 'Work' },
+          { key: 'skipped', label: 'Skipped', type: 'number', group: 'Work' }, { key: 'rejected', label: 'Rejected', type: 'number', group: 'Work' },
+          { key: 'on_time', label: 'On time', type: 'number', group: 'SLA' }, { key: 'late', label: 'Late', type: 'number', group: 'SLA' },
+          { key: 'avg_delay', label: 'Avg delay', group: 'SLA' },
+          { key: 'avg_tat', label: 'Avg TAT', group: 'Productivity' }, { key: 'on_time_pct', label: 'On-time %', type: 'percent', group: 'Productivity' },
+        ],
         rows: out,
       });
       break;

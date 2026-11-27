@@ -6,7 +6,7 @@ import { useMeta } from '../lib/auth';
 import { fmtDate, fmtDateTime, fmtNumber } from '../lib/format';
 import { useLoad, useUrlFilters } from '../lib/hooks';
 
-interface Column { key: string; label: string; type?: string }
+interface Column { key: string; label: string; type?: string; group?: string }
 interface Report { key: string; title: string; description: string; date_basis: string; sections: { title: string; columns: Column[]; rows: Record<string, unknown>[] }[] }
 
 function Cell({ col, row }: { col: Column; row: Record<string, unknown> }) {
@@ -90,7 +90,22 @@ export function Reports() {
           {!s.rows.length ? <Empty title="No data for these filters" /> : (
             <div className="table-wrap" style={{ maxHeight: 640, overflowY: 'auto' }}>
               <table className="table compact">
-                <thead><tr>{s.columns.map((c) => <th key={c.key} className={['number', 'hours', 'percent'].includes(c.type ?? '') ? 'num' : ''}>{c.label}</th>)}</tr></thead>
+                <thead>
+                  {s.columns.some((c) => c.group) && (
+                    <tr>
+                      {(() => {
+                        const spans: { group: string; span: number }[] = [];
+                        for (const c of s.columns) {
+                          const g = c.group ?? '';
+                          if (spans.length && spans[spans.length - 1].group === g) spans[spans.length - 1].span++;
+                          else spans.push({ group: g, span: 1 });
+                        }
+                        return spans.map((sp, i) => <th key={i} colSpan={sp.span} className="small muted" style={{ textAlign: 'center', borderBottom: 'none' }}>{sp.group}</th>);
+                      })()}
+                    </tr>
+                  )}
+                  <tr>{s.columns.map((c) => <th key={c.key} className={['number', 'hours', 'percent'].includes(c.type ?? '') ? 'num' : ''}>{c.label}</th>)}</tr>
+                </thead>
                 <tbody>
                   {s.rows.slice(0, PAGE).map((r, i) => (
                     <tr key={i}>{s.columns.map((c) => <td key={c.key} className={['number', 'hours', 'percent'].includes(c.type ?? '') ? 'num' : c.key === 'title' || c.key === 'description' ? 'title-cell' : ''}><Cell col={c} row={r} /></td>)}</tr>
